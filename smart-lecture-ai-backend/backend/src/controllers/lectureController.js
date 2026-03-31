@@ -3,10 +3,16 @@ const path = require("path");
 const fs = require("fs");
 const Lecture = require("../models/Lecture");
 const { Queue } = require("bullmq");
-const { connection } = require("../queues");
+const { connection, isRedisAvailable } = require("../queues");
 const aiService = require("../services/aiService");
 
-const aiQueue = new Queue("ai-jobs", { connection });
+let aiQueue = null;
+function getQueue() {
+  if (!aiQueue && isRedisAvailable()) {
+    aiQueue = new Queue("ai-jobs", { connection });
+  }
+  return aiQueue;
+}
 
 const now = () => new Date().toISOString();
 const clog = (...a) => console.log(`[${now()}]`, ...a);
@@ -73,7 +79,7 @@ exports.uploadLecture = async (req, res) => {
 
     // 🧠 Enqueue AI job
     try {
-      await aiQueue.add("processLecture", {
+      await getQueue().add("processLecture", {
         lectureId: lecture._id.toString(),
         videoPath: absVideo,
         audioPath: absAudio,
@@ -179,18 +185,24 @@ exports.processLecture = async (req, res) => {
       return res.status(400).json({ error: "No valid media file found for processing." });
     }
 
-    await aiQueue.add("processLecture", {
-      lectureId: lecture._id.toString(),
-      videoPath: absVideo,
-      audioPath: absAudio,
-      pptPath: absPpt,
-      youtubeUrl: lecture.youtubeUrl || null,
-    });
+    const queue = getQueue();
+    if (queue) {
+      await queue.add("processLecture", {
+        lectureId: lecture._id.toString(),
+        videoPath: absVideo,
+        audioPath: absAudio,
+        pptPath: absPpt,
+        youtubeUrl: lecture.youtubeUrl || null,
+      });
+      lecture.status = "queued";
+      await lecture.save();
+      clog("📦 Lecture successfully requeued for AI processing:", lecture._id);
+    } else {
+      clog("⚠️ Redis unavailable — cannot requeue. Processing inline...");
+      lecture.status = "processing";
+      await lecture.save();
+    }
 
-    lecture.status = "queued";
-    await lecture.save();
-
-    clog("📦 Lecture successfully requeued for AI processing:", lecture._id);
     res.json({ message: "Lecture requeued for processing", lecture });
   } catch (err) {
     clog("❌ processLecture error:", err);
