@@ -4,7 +4,7 @@ import { useRouter, usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { BookOpen, FileText, Brain, Trophy, BarChart3, User, LayoutDashboard } from "lucide-react"
+import { BookOpen, FileText, Brain, Trophy, BarChart3, User, LayoutDashboard, LineChart } from "lucide-react"
 
 const sidebarItems = [
   { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -13,6 +13,7 @@ const sidebarItems = [
   { title: "Quizzes", href: "/dashboard/quizzes", icon: Brain },
   { title: "Scores", href: "/dashboard/scores", icon: Trophy },
   { title: "Progress", href: "/dashboard/progress", icon: BarChart3 },
+  { title: "Analytics", href: "/dashboard/analytics", icon: LineChart },
   { title: "Profile", href: "/dashboard/profile", icon: User },
 ]
 

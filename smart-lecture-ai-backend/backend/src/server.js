@@ -11,6 +11,7 @@ const connectDB = require('./config/db');
 const authRoutes = require('./routes/auth');
 const lectureRoutes = require('./routes/lectures');
 const quizRoutes = require('./routes/quizzes');
+const analyticsRoutes = require('./routes/analytics');
 const errorHandler = require('./middlewares/errorHandler');
 
 const app = express();
@@ -60,6 +61,7 @@ app.get('/api/health', (req, res) => res.json({ ok: true }));
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/lectures', apiLimiter, lectureRoutes);
 app.use('/api/quizzes', apiLimiter, quizRoutes);
+app.use('/api/analytics', apiLimiter, analyticsRoutes);
 
 // ✅ Error handler
 app.use(errorHandler);

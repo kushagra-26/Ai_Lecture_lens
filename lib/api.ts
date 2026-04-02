@@ -111,4 +111,21 @@ export const apiService = {
     )
     return res.data
   },
+
+  // 🔹 ANALYTICS
+  async getStudentAnalytics() {
+    const token = localStorage.getItem("token")
+    const res = await axios.get(`${API_URL}/analytics/student`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    return res.data
+  },
+
+  async getLeaderboard() {
+    const token = localStorage.getItem("token")
+    const res = await axios.get(`${API_URL}/analytics/leaderboard`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    return res.data
+  },
 }
