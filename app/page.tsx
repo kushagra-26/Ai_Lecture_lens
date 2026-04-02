@@ -4,171 +4,195 @@ import { useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useAppStore } from "@/lib/store"
 import { Button } from "@/components/ui/button"
-import {
-  BookOpen,
-  Brain,
-  Trophy,
-  BarChart3,
-  ArrowRight,
-  Mic,
-  FileText,
-  Sparkles,
-  GraduationCap,
-} from "lucide-react"
+import { ArrowRight, Mic, Brain, FileText, BarChart3, Sparkles, GraduationCap, CheckCircle } from "lucide-react"
 
 export default function HomePage() {
   const router = useRouter()
   const { isAuthenticated } = useAppStore()
 
   useEffect(() => {
-    if (isAuthenticated) {
-      router.push("/dashboard")
-    }
+    if (isAuthenticated) router.push("/dashboard")
   }, [isAuthenticated, router])
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Top nav */}
-      <header className="border-b bg-background/80 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container mx-auto px-6 h-16 flex items-center justify-between">
+    <div className="min-h-screen bg-background text-foreground">
+
+      {/* ── Nav ── */}
+      <header className="sticky top-0 z-50 bg-background/90 backdrop-blur-sm border-b border-border">
+        <div className="max-w-6xl mx-auto px-6 h-[60px] flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="h-9 w-9 rounded-lg bg-primary flex items-center justify-center">
-              <GraduationCap className="h-5 w-5 text-primary-foreground" />
+            <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center">
+              <GraduationCap className="h-4 w-4 text-primary-foreground" />
             </div>
-            <span className="text-lg font-semibold tracking-tight">Lecture Lens</span>
+            <span className="text-sm font-semibold tracking-tight text-foreground">Lecture Lens</span>
           </div>
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={() => router.push("/auth/login")}>
+          <nav className="flex items-center gap-1">
+            <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground text-[13px] h-8"
+              onClick={() => router.push("/auth/login")}>
               Sign in
             </Button>
-            <Button size="sm" onClick={() => router.push("/auth/signup")}>
-              Get Started
+            <Button size="sm" className="bg-foreground text-background hover:bg-foreground/90 text-[13px] h-8 px-4 rounded-lg"
+              onClick={() => router.push("/auth/signup")}>
+              Get started
             </Button>
-          </div>
+          </nav>
         </div>
       </header>
 
-      {/* Hero */}
-      <section className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-b from-primary/5 via-transparent to-transparent" />
-        <div className="container mx-auto px-6 pt-20 pb-24 relative">
-          <div className="max-w-3xl mx-auto text-center">
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 mb-6 rounded-full border bg-secondary/50 text-sm text-muted-foreground">
-              <Sparkles className="h-3.5 w-3.5 text-primary" />
-              AI-powered learning platform
-            </div>
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-foreground leading-[1.1] mb-6">
-              Turn any lecture into an
-              <span className="text-primary"> interactive study guide</span>
-            </h1>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-10 leading-relaxed">
-              Upload a video, audio, or presentation. Get AI-generated transcripts, concise summaries,
-              and self-assessment quizzes -- all in seconds.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              <Button size="lg" className="px-8" onClick={() => router.push("/auth/signup")}>
-                Start for free
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-              <Button size="lg" variant="outline" onClick={() => router.push("/auth/login")}>
-                Sign in to dashboard
-              </Button>
-            </div>
+      {/* ── Hero ── */}
+      <section className="pt-24 pb-20 px-6">
+        <div className="max-w-3xl mx-auto text-center">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 mb-8 rounded-full bg-primary/10 border border-primary/20 text-xs font-medium text-primary">
+            <Sparkles className="h-3 w-3" />
+            AI-powered academic platform
           </div>
-        </div>
-      </section>
 
-      {/* How it works */}
-      <section className="py-20 border-t">
-        <div className="container mx-auto px-6">
-          <div className="text-center mb-14">
-            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-3">How it works</h2>
-            <p className="text-muted-foreground max-w-lg mx-auto">Three steps from raw lecture to study-ready material</p>
-          </div>
-          <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto">
-            {[
-              {
-                step: "01",
-                icon: Mic,
-                title: "Upload your lecture",
-                desc: "Drop in a video, audio file, presentation, or paste a YouTube link.",
-              },
-              {
-                step: "02",
-                icon: Brain,
-                title: "AI processes it",
-                desc: "Automatic transcription, OCR, and dual-model summarization run in the background.",
-              },
-              {
-                step: "03",
-                icon: FileText,
-                title: "Learn & test yourself",
-                desc: "Review smart summaries, browse the transcript, and take auto-generated quizzes.",
-              },
-            ].map((item) => (
-              <div key={item.step} className="relative text-center group">
-                <div className="inline-flex items-center justify-center h-14 w-14 rounded-2xl bg-primary/10 text-primary mb-5 group-hover:bg-primary/15 transition-colors">
-                  <item.icon className="h-6 w-6" />
-                </div>
-                <div className="text-xs font-semibold text-primary/60 uppercase tracking-widest mb-2">Step {item.step}</div>
-                <h3 className="text-lg font-semibold mb-2">{item.title}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">{item.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+          <h1 className="text-[52px] sm:text-[64px] font-bold tracking-[-0.03em] leading-[1.05] mb-6 text-foreground">
+            Turn any lecture into
+            <br />
+            <span className="text-primary">structured knowledge</span>
+          </h1>
 
-      {/* Features */}
-      <section className="py-20 border-t bg-secondary/30">
-        <div className="container mx-auto px-6">
-          <div className="text-center mb-14">
-            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-3">Everything you need to learn smarter</h2>
-            <p className="text-muted-foreground max-w-lg mx-auto">Built for students and educators who value their time</p>
-          </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 max-w-5xl mx-auto">
-            {[
-              { icon: BookOpen, title: "Multi-format upload", desc: "Video, audio, PPT, PDF, or YouTube links" },
-              { icon: Mic, title: "Bilingual transcription", desc: "English and Hindi with timestamps" },
-              { icon: Brain, title: "Dual AI summaries", desc: "Local BART model + OpenAI for best results" },
-              { icon: Trophy, title: "Auto quizzes", desc: "MCQs generated from lecture content" },
-              { icon: FileText, title: "OCR extraction", desc: "Text from slides and whiteboards" },
-              { icon: BarChart3, title: "Progress analytics", desc: "Track scores, streaks, and growth" },
-              { icon: Sparkles, title: "Real-time processing", desc: "Background AI pipeline with live status" },
-              { icon: GraduationCap, title: "Role-based access", desc: "Student, teacher, and admin roles" },
-            ].map((f) => (
-              <div key={f.title} className="rounded-xl border bg-card p-5 hover:shadow-md transition-shadow">
-                <f.icon className="h-5 w-5 text-primary mb-3" />
-                <h3 className="font-semibold text-sm mb-1">{f.title}</h3>
-                <p className="text-xs text-muted-foreground leading-relaxed">{f.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* CTA */}
-      <section className="py-20 border-t">
-        <div className="container mx-auto px-6 text-center">
-          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-4">Ready to learn smarter?</h2>
-          <p className="text-muted-foreground mb-8 max-w-md mx-auto">
-            Upload your first lecture and see AI-generated study materials in minutes.
+          <p className="text-[17px] text-muted-foreground max-w-lg mx-auto leading-relaxed mb-10">
+            Upload video, audio, or slides. Get AI transcripts, concise summaries,
+            and self-assessment quizzes in seconds.
           </p>
-          <Button size="lg" className="px-10" onClick={() => router.push("/auth/signup")}>
-            Create free account
-            <ArrowRight className="ml-2 h-4 w-4" />
-          </Button>
+
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+            <Button
+              size="lg"
+              className="bg-foreground text-background hover:bg-foreground/90 h-11 px-7 text-[14px] font-medium rounded-xl shadow-warm-md transition-all hover:scale-[1.01]"
+              onClick={() => router.push("/auth/signup")}
+            >
+              Start for free
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+            <Button
+              size="lg"
+              variant="outline"
+              className="h-11 px-6 text-[14px] rounded-xl border-border text-muted-foreground hover:text-foreground"
+              onClick={() => router.push("/auth/login")}
+            >
+              Sign in to dashboard
+            </Button>
+          </div>
+
+          {/* Trust line */}
+          <div className="flex items-center justify-center gap-5 mt-10">
+            {["Free to start", "No credit card", "AI-powered"].map((t) => (
+              <div key={t} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <CheckCircle className="h-3.5 w-3.5 text-primary" />
+                {t}
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="border-t py-8">
-        <div className="container mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
+      {/* ── Divider ── */}
+      <div className="max-w-6xl mx-auto px-6">
+        <div className="border-t border-border" />
+      </div>
+
+      {/* ── How it works ── */}
+      <section className="py-20 px-6">
+        <div className="max-w-5xl mx-auto">
+          <div className="mb-14">
+            <p className="text-xs font-semibold uppercase tracking-widest text-primary mb-3">How it works</p>
+            <h2 className="text-3xl font-bold tracking-tight text-foreground">
+              From raw lecture to study-ready
+            </h2>
+            <p className="text-muted-foreground mt-2 text-[15px]">Three steps, fully automated.</p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-6">
+            {[
+              { num: "01", icon: Mic, title: "Upload your lecture", desc: "Drop a video, audio file, slides, or paste a YouTube link." },
+              { num: "02", icon: Brain, title: "AI processes it", desc: "Transcription, OCR, and dual-model summarization run in the background." },
+              { num: "03", icon: FileText, title: "Learn & quiz yourself", desc: "Review smart summaries and take auto-generated MCQ quizzes." },
+            ].map((step) => (
+              <div key={step.num} className="bg-card rounded-2xl p-6 border border-border shadow-warm group hover:border-primary/25 transition-colors duration-200">
+                <span className="text-[11px] font-bold text-primary/50 uppercase tracking-widest">{step.num}</span>
+                <div className="mt-4 mb-4 h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/15 transition-colors">
+                  <step.icon className="h-5 w-5 text-primary" />
+                </div>
+                <h3 className="font-semibold text-[15px] mb-2 text-foreground">{step.title}</h3>
+                <p className="text-[13px] text-muted-foreground leading-relaxed">{step.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Divider ── */}
+      <div className="max-w-6xl mx-auto px-6">
+        <div className="border-t border-border" />
+      </div>
+
+      {/* ── Features ── */}
+      <section className="py-20 px-6">
+        <div className="max-w-5xl mx-auto">
+          <div className="mb-14">
+            <p className="text-xs font-semibold uppercase tracking-widest text-primary mb-3">Platform features</p>
+            <h2 className="text-3xl font-bold tracking-tight text-foreground">Everything you need to learn smarter</h2>
+          </div>
+
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {[
+              { icon: GraduationCap, title: "Multi-format upload", desc: "Video, audio, PPT, PDF, or YouTube links all supported." },
+              { icon: Mic, title: "AI transcription", desc: "English and Hindi with timestamps from Vosk + OpenAI." },
+              { icon: Brain, title: "Dual AI summaries", desc: "Local BART model combined with GPT-4 for best output." },
+              { icon: FileText, title: "Auto-generated quizzes", desc: "MCQs created directly from your lecture content." },
+              { icon: BarChart3, title: "Performance analytics", desc: "Score history, weak areas, and peer ranking." },
+              { icon: Sparkles, title: "Real-time AI pipeline", desc: "Background processing with live status updates." },
+            ].map((f) => (
+              <div key={f.title}
+                className="group flex gap-4 p-5 rounded-xl bg-card border border-border shadow-warm hover:border-primary/25 hover:shadow-warm-md transition-all duration-200 cursor-default"
+              >
+                <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 group-hover:bg-primary/15 transition-colors">
+                  <f.icon className="h-4 w-4 text-primary" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-[14px] mb-1 text-foreground">{f.title}</h3>
+                  <p className="text-[13px] text-muted-foreground leading-relaxed">{f.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── CTA ── */}
+      <section className="py-20 px-6">
+        <div className="max-w-2xl mx-auto">
+          <div className="bg-foreground text-background rounded-3xl p-12 text-center shadow-warm-md">
+            <div className="h-12 w-12 rounded-2xl bg-white/10 flex items-center justify-center mx-auto mb-6">
+              <GraduationCap className="h-6 w-6 text-white" />
+            </div>
+            <h2 className="text-2xl font-bold tracking-tight mb-3">Ready to study smarter?</h2>
+            <p className="text-white/60 text-[14px] mb-8 max-w-sm mx-auto leading-relaxed">
+              Upload your first lecture and get AI-generated study materials in minutes.
+            </p>
+            <Button
+              size="lg"
+              className="bg-primary text-primary-foreground hover:bg-primary/90 h-11 px-8 text-[14px] font-medium rounded-xl amber-glow"
+              onClick={() => router.push("/auth/signup")}
+            >
+              Create free account
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Footer ── */}
+      <footer className="border-t border-border py-8 px-6">
+        <div className="max-w-6xl mx-auto flex items-center justify-between text-[13px] text-muted-foreground">
           <div className="flex items-center gap-2">
-            <GraduationCap className="h-4 w-4 text-primary" />
+            <GraduationCap className="h-3.5 w-3.5 text-primary" />
             <span className="font-medium text-foreground">Lecture Lens</span>
           </div>
-          <p>Built with Next.js, Express, and AI</p>
+          <p>Next.js · Express · AI</p>
         </div>
       </footer>
     </div>
