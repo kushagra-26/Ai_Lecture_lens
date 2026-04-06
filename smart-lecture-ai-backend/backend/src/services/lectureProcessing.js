@@ -85,8 +85,10 @@ async function processLectureJob({
       throw new Error("No valid lecture media was provided for processing.");
     }
 
-    const transcript = await aiService.transcribe(inputFile);
-    const extractResult = await aiService.extract(inputFile);
+    const [transcript, extractResult] = await Promise.all([
+      aiService.transcribe(inputFile),
+      aiService.extract(inputFile),
+    ]);
     const frames = Array.isArray(extractResult)
       ? extractResult
       : extractResult?.frames || [];
@@ -96,7 +98,10 @@ async function processLectureJob({
       throw new Error("Processing finished without extractable lecture text.");
     }
 
-    const summaryResult = await aiService.dualSummarize(lectureText);
+    const [summaryResult, quizResult] = await Promise.all([
+      aiService.dualSummarize(lectureText),
+      aiService.generateQuiz(lectureText, 7),
+    ]);
     const localSummary = summaryResult.localSummary || "";
     const aiSummary = summaryResult.aiSummary || "";
     const mergedSummary = buildMergedSummary(localSummary, aiSummary);
@@ -104,8 +109,6 @@ async function processLectureJob({
     if (!mergedSummary) {
       console.warn("[lectureProcessing] Summary is empty — continuing without summary.");
     }
-
-    const quizResult = await aiService.generateQuiz(lectureText, 7);
 
     lecture.transcript = Array.isArray(transcript) ? transcript : [];
     lecture.frames = frames;

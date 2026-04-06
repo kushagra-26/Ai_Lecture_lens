@@ -188,6 +188,13 @@ exports.processLecture = async (req, res) => {
     });
   }
 
+  // Reset stuck processing state so the job can be re-queued cleanly
+  if (lecture.status === "processing" || lecture.status === "failed") {
+    lecture.status = "uploaded";
+    lecture.errorMessage = "";
+    await lecture.save();
+  }
+
   const result = await queueOrProcessLecture(lecture);
   res.json(result);
 };
