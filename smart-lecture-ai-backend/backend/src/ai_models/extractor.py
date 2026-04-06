@@ -21,14 +21,19 @@ if not tesseract_cmd:
             tesseract_cmd = p
             break
 
+TESSERACT_AVAILABLE = False
 if tesseract_cmd:
     pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
+    TESSERACT_AVAILABLE = True
 else:
-    print("[extractor] Warning: Tesseract not found. OCR will fail.", file=sys.stderr)
+    print("[extractor] Warning: Tesseract not found. OCR disabled.", file=sys.stderr)
 
 
 def extract_text_from_video(video_path, frame_interval=60, hash_diff=5):
     """Extract slide text + timestamps from video frames using OCR."""
+    if not TESSERACT_AVAILABLE:
+        return []
+
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         print(f"[extractor] Cannot open video: {video_path}", file=sys.stderr)

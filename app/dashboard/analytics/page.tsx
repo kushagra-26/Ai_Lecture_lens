@@ -455,14 +455,14 @@ export default function AnalyticsPage() {
                           {badge.icon}
                         </span>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm truncate">
-                            {entry.name}
+                          <div className="flex items-center gap-1.5 text-sm truncate">
+                            <span className="truncate">{entry.name}</span>
                             {entry.isMe && (
-                              <Badge variant="outline" className="ml-1.5 text-[9px] px-1 py-0 h-4 border-primary/40 text-primary">
+                              <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-primary/40 text-primary shrink-0">
                                 You
                               </Badge>
                             )}
-                          </p>
+                          </div>
                           <p className="text-[10px] text-muted-foreground">{entry.attempts} attempt{entry.attempts !== 1 ? "s" : ""}</p>
                         </div>
                         <div className="text-right shrink-0">
