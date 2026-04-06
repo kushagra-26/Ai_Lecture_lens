@@ -56,7 +56,7 @@ export default function SummariesPage() {
 
     const interval = setInterval(() => {
       fetchSummary()
-    }, 6000)
+    }, 10000)
 
     return () => clearInterval(interval)
   }, [lectureId, status])

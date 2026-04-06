@@ -17,6 +17,8 @@ const TRANSCRIBE_URL = process.env.TRANSCRIBE_SERVICE_URL || null;
 const EXTRACT_URL = process.env.EXTRACT_SERVICE_URL || null;
 const QUIZ_URL = process.env.QUIZ_SERVICE_URL || null;
 const SUMMARIZE_URL = process.env.SUMMARIZE_SERVICE_URL || null;
+const CLEAN_URL = process.env.CLEAN_SERVICE_URL
+  || (SUMMARIZE_URL ? SUMMARIZE_URL.replace("/summarize", "/clean") : null);
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -24,6 +26,89 @@ const client = new OpenAI({
 
 const log = (...msg) => console.log("[aiService]", ...msg);
 const errLog = (...msg) => console.error("[aiService]", ...msg);
+
+/* ===========================================================
+   Text preparation — clean + extract key sentences
+   Reduces token count before sending to AI models
+   =========================================================== */
+const STOP_WORDS = new Set([
+  "the","a","an","and","or","but","in","on","at","to","for","of","with",
+  "is","are","was","were","be","been","being","have","has","had","do","does",
+  "did","will","would","could","should","may","might","this","that","these",
+  "those","it","its","we","they","he","she","you","i","so","as","by","from",
+]);
+
+function extractKeyContent(text, maxChars = 6000) {
+  const sentences = text
+    .replace(/([.?!])\s+/g, "$1\n")
+    .split("\n")
+    .map(s => s.trim())
+    .filter(s => s.length > 20);
+
+  if (!sentences.length) return text.slice(0, maxChars);
+
+  // Tokenize once per sentence, build freq map and scores in one pass
+  const wordFreq = {};
+  const tokenized = sentences.map(s => {
+    const words = s.toLowerCase().replace(/[^a-z\s]/g, "").split(/\s+/)
+      .filter(w => w.length > 3 && !STOP_WORDS.has(w));
+    words.forEach(w => { wordFreq[w] = (wordFreq[w] || 0) + 1; });
+    return { s, words };
+  });
+
+  const scored = tokenized.map(({ s, words }) => ({
+    s,
+    score: words.length ? words.reduce((sum, w) => sum + wordFreq[w], 0) / words.length : 0,
+  }));
+
+  scored.sort((a, b) => b.score - a.score);
+  const topSet = new Set(scored.slice(0, Math.ceil(sentences.length * 0.6)).map(x => x.s));
+
+  const parts = [];
+  let len = 0;
+  for (const s of sentences.filter(s => topSet.has(s))) {
+    if (len + s.length + 1 > maxChars) break;
+    parts.push(s);
+    len += s.length + 1;
+  }
+  return parts.join(" ") || text.slice(0, maxChars);
+}
+
+exports.prepareText = async (rawText) => {
+  if (!rawText) return "";
+  log("prepareText input length:", rawText.length);
+
+  let cleaned = rawText;
+
+  // Try FastAPI cleaner first
+  if (CLEAN_URL) {
+    try {
+      const res = await axios.post(CLEAN_URL, { text: rawText }, { timeout: 60000 });
+      cleaned = res.data?.text || rawText;
+      log("FastAPI cleaner output length:", cleaned.length);
+    } catch (err) {
+      errLog("FastAPI clean failed, using raw text:", err.message);
+    }
+  } else {
+    // Local cleaner via spawnSync
+    const cleanTmp = path.join(os.tmpdir(), `lns_prep_${Date.now()}.txt`);
+    try {
+      fs.writeFileSync(cleanTmp, rawText, "utf8");
+      const res = spawnSync(PYTHON_VENV_PATH, [path.join(AI_MODELS_DIR, "cleaner.py"), cleanTmp], { encoding: "utf8" });
+      if (res.status !== 0) errLog("cleaner.py stderr:", res.stderr);
+      cleaned = res.stdout?.toString().trim() || rawText;
+    } catch (err) {
+      errLog("Local clean failed:", err.message);
+    } finally {
+      fs.rmSync(cleanTmp, { force: true });
+    }
+  }
+
+  // Extract key sentences and cap length
+  const prepared = extractKeyContent(cleaned, 6000);
+  log("prepareText output length:", prepared.length, `(saved ~${rawText.length - prepared.length} chars)`);
+  return prepared;
+};
 
 /* ===========================================================
    Helper: send file to FastAPI endpoint via multipart upload
@@ -77,14 +162,25 @@ async function downloadYouTubeVideo(url, outDir) {
   if (!ytdl.validateURL(url)) throw new Error("Invalid YouTube URL");
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 
-  const filePath = path.join(outDir, `youtube_${Date.now()}.mp4`);
-  const stream = ytdl(url, { quality: "highestvideo", filter: "audioandvideo" });
+  // Prefer audio-only (smaller, faster, sufficient for transcription)
+  // Fall back to lowest combined format if audioonly unavailable
+  const info = await ytdl.getInfo(url);
+  const audioFormat = ytdl.chooseFormat(info.formats, { quality: "highestaudio", filter: "audioonly" });
+  const ext = audioFormat ? ".webm" : ".mp4";
+  const filePath = path.join(outDir, `youtube_${Date.now()}${ext}`);
+
+  const streamOpts = audioFormat
+    ? { quality: "highestaudio", filter: "audioonly" }
+    : { quality: "lowest", filter: "audioandvideo" };
+
+  const stream = ytdl.downloadFromInfo(info, streamOpts);
   const writeStream = fs.createWriteStream(filePath);
 
   await new Promise((resolve, reject) => {
+    stream.on("error", reject);
+    writeStream.on("error", reject);
     stream.pipe(writeStream);
     writeStream.on("finish", resolve);
-    writeStream.on("error", reject);
   });
 
   log("YouTube saved:", filePath);
@@ -164,11 +260,10 @@ exports.generateQuiz = async (text, numQuestions = 5) => {
       }
       log("Quiz via FastAPI:", localQuiz.length, "questions");
     } catch (err) {
-      errLog("FastAPI quiz failed, falling back to local:", err.message);
+      errLog("FastAPI quiz failed (skipping local fallback, relying on OpenAI):", err.message);
     }
-  }
-
-  if (localQuiz.length === 0) {
+  } else {
+    // Local quiz only when FastAPI is not configured
     const quizTmp = path.join(os.tmpdir(), `lns_quiz_${Date.now()}.txt`);
     try {
       fs.writeFileSync(quizTmp, text, "utf8");
@@ -208,7 +303,7 @@ Return ONLY a JSON object with this exact structure:
 }
 correctAnswer is the 0-based index of the correct option. Generate exactly ${numQuestions} questions.`,
           },
-          { role: "user", content: `Generate ${numQuestions} MCQs from this lecture content:\n${text.slice(0, 5000)}` },
+          { role: "user", content: `Generate ${numQuestions} MCQs from this lecture content:\n${text}` },
         ],
       });
       const raw = completion.choices?.[0]?.message?.content || "{}";
@@ -246,16 +341,14 @@ exports.dualSummarize = async (cleanText) => {
   // FastAPI summarization (preferred)
   if (SUMMARIZE_URL) {
     try {
-      const res = await axios.post(SUMMARIZE_URL, { text: cleanText }, { timeout: 300000 });
+      const res = await axios.post(SUMMARIZE_URL, { text: cleanText }, { timeout: 120000 });
       localSummary = res.data?.summary || "";
       log("FastAPI summary length:", localSummary.length);
     } catch (err) {
-      errLog("FastAPI summarize failed, falling back to local:", err.message);
+      errLog("FastAPI summarize failed (skipping local fallback, relying on OpenAI):", err.message);
     }
-  }
-
-  if (!localSummary) {
-    // Local summarization — write to temp files to avoid Windows CLI arg length limits
+  } else {
+    // Local summarization only when FastAPI is not configured
     const cleanTmp = path.join(os.tmpdir(), `lns_clean_${Date.now()}.txt`);
     const summTmp = path.join(os.tmpdir(), `lns_summ_${Date.now()}.txt`);
     try {
@@ -285,7 +378,7 @@ exports.dualSummarize = async (cleanText) => {
         model: "gpt-4o-mini",
         messages: [
           { role: "system", content: "You are a helpful summarization assistant for lecture notes. Provide a clear, structured summary with key points and takeaways." },
-          { role: "user", content: cleanText.slice(0, 8000) },
+          { role: "user", content: cleanText },
         ],
       });
       aiSummary = resp.choices?.[0]?.message?.content || "";

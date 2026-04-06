@@ -58,7 +58,7 @@ export default function LectureViewerPage() {
 
     const interval = setInterval(() => {
       fetchLecture()
-    }, 6000)
+    }, 10000)
 
     return () => clearInterval(interval)
   }, [lecture])

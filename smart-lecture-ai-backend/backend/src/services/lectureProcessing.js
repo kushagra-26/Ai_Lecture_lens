@@ -98,9 +98,12 @@ async function processLectureJob({
       throw new Error("Processing finished without extractable lecture text.");
     }
 
+    // Clean + extract key content once — reduces tokens for both summarize and quiz
+    const preparedText = await aiService.prepareText(lectureText);
+
     const [summaryResult, quizResult] = await Promise.all([
-      aiService.dualSummarize(lectureText),
-      aiService.generateQuiz(lectureText, 7),
+      aiService.dualSummarize(preparedText),
+      aiService.generateQuiz(preparedText, 7),
     ]);
     const localSummary = summaryResult.localSummary || "";
     const aiSummary = summaryResult.aiSummary || "";

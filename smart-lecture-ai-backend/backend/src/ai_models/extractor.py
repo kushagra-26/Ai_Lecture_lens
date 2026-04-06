@@ -27,7 +27,7 @@ else:
     print("[extractor] Warning: Tesseract not found. OCR will fail.", file=sys.stderr)
 
 
-def extract_text_from_video(video_path, frame_interval=30, hash_diff=5):
+def extract_text_from_video(video_path, frame_interval=60, hash_diff=5):
     """Extract slide text + timestamps from video frames using OCR."""
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():

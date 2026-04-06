@@ -3,7 +3,7 @@ uvicorn[standard]
 python-multipart
 moviepy
 pydub
-vosk
+faster-whisper
 opencv-python-headless
 pillow
 imagehash
