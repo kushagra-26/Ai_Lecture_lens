@@ -102,7 +102,7 @@ async function processLectureJob({
     const mergedSummary = buildMergedSummary(localSummary, aiSummary);
 
     if (!mergedSummary) {
-      throw new Error("Summary generation completed without usable output.");
+      console.warn("[lectureProcessing] Summary is empty — continuing without summary.");
     }
 
     const quizResult = await aiService.generateQuiz(lectureText, 7);

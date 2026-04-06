@@ -1,5 +1,6 @@
 require("dotenv").config();
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const axios = require("axios");
 const { spawnSync } = require("child_process");
@@ -15,6 +16,7 @@ const AI_MODELS_DIR = path.join(__dirname, "../ai_models");
 const TRANSCRIBE_URL = process.env.TRANSCRIBE_SERVICE_URL || null;
 const EXTRACT_URL = process.env.EXTRACT_SERVICE_URL || null;
 const QUIZ_URL = process.env.QUIZ_SERVICE_URL || null;
+const SUMMARIZE_URL = process.env.SUMMARIZE_SERVICE_URL || null;
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -167,14 +169,19 @@ exports.generateQuiz = async (text, numQuestions = 5) => {
   }
 
   if (localQuiz.length === 0) {
+    const quizTmp = path.join(os.tmpdir(), `lns_quiz_${Date.now()}.txt`);
     try {
-      const pyRes = spawnSync(PYTHON_VENV_PATH, [path.join(AI_MODELS_DIR, "quiz_generator.py"), text], { encoding: "utf8" });
+      fs.writeFileSync(quizTmp, text, "utf8");
+      const pyRes = spawnSync(PYTHON_VENV_PATH, [path.join(AI_MODELS_DIR, "quiz_generator.py"), quizTmp], { encoding: "utf8" });
+      if (pyRes.status !== 0) errLog("quiz_generator.py stderr:", pyRes.stderr);
       const output = pyRes.stdout?.toString().trim();
       if (output) {
         localQuiz = output.includes("\n") ? output.split("\n").filter((l) => l.trim()) : [output];
       }
     } catch (err) {
       errLog("Local quiz failed:", err.message);
+    } finally {
+      fs.rmSync(quizTmp, { force: true });
     }
   }
 
@@ -236,16 +243,38 @@ exports.dualSummarize = async (cleanText) => {
   let localSummary = "";
   let aiSummary = "";
 
-  // Local summarization
-  try {
-    const cleanRes = spawnSync(PYTHON_VENV_PATH, [path.join(AI_MODELS_DIR, "cleaner.py"), cleanText], { encoding: "utf8" });
-    const cleaned = cleanRes.stdout?.toString() || cleanText;
+  // FastAPI summarization (preferred)
+  if (SUMMARIZE_URL) {
+    try {
+      const res = await axios.post(SUMMARIZE_URL, { text: cleanText }, { timeout: 300000 });
+      localSummary = res.data?.summary || "";
+      log("FastAPI summary length:", localSummary.length);
+    } catch (err) {
+      errLog("FastAPI summarize failed, falling back to local:", err.message);
+    }
+  }
 
-    const local = spawnSync(PYTHON_VENV_PATH, [path.join(AI_MODELS_DIR, "summarize.py"), cleaned], { encoding: "utf8" });
-    localSummary = local.stdout?.toString().trim() || "";
-    log("Local summary length:", localSummary.length);
-  } catch (err) {
-    errLog("Local summarize failed:", err.message);
+  if (!localSummary) {
+    // Local summarization — write to temp files to avoid Windows CLI arg length limits
+    const cleanTmp = path.join(os.tmpdir(), `lns_clean_${Date.now()}.txt`);
+    const summTmp = path.join(os.tmpdir(), `lns_summ_${Date.now()}.txt`);
+    try {
+      fs.writeFileSync(cleanTmp, cleanText, "utf8");
+      const cleanRes = spawnSync(PYTHON_VENV_PATH, [path.join(AI_MODELS_DIR, "cleaner.py"), cleanTmp], { encoding: "utf8" });
+      if (cleanRes.status !== 0) errLog("cleaner.py stderr:", cleanRes.stderr);
+      const cleaned = cleanRes.stdout?.toString().trim() || cleanText;
+
+      fs.writeFileSync(summTmp, cleaned, "utf8");
+      const local = spawnSync(PYTHON_VENV_PATH, [path.join(AI_MODELS_DIR, "summarize.py"), summTmp], { encoding: "utf8" });
+      if (local.status !== 0) errLog("summarize.py stderr:", local.stderr);
+      localSummary = local.stdout?.toString().trim() || "";
+      log("Local summary length:", localSummary.length);
+    } catch (err) {
+      errLog("Local summarize failed:", err.message);
+    } finally {
+      fs.rmSync(cleanTmp, { force: true });
+      fs.rmSync(summTmp, { force: true });
+    }
   }
 
   // OpenAI summarization
