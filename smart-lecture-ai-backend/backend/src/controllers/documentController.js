@@ -74,7 +74,11 @@ async function _ingestDocument(documentId, filePath, fileName, title) {
 // List all documents for the authenticated user
 // ─────────────────────────────────────────────────────────────────
 exports.listDocuments = async (req, res) => {
-  const docs = await Document.find({ userId: req.user._id })
+  const filter = { userId: req.user._id };
+  if (req.query.source) filter.source = req.query.source;
+  if (req.query.lectureId) filter.lectureId = req.query.lectureId;
+
+  const docs = await Document.find(filter)
     .select("-chatHistory")
     .sort({ createdAt: -1 });
   res.json({ documents: docs });
@@ -197,6 +201,30 @@ Keep answers concise, accurate, and educational.`;
       score: c.score,
     })),
   });
+};
+
+// ─────────────────────────────────────────────────────────────────
+// Reusable: create a Document record + ingest a local file
+// Called from lectureController when a book PDF is attached to a lecture
+// ─────────────────────────────────────────────────────────────────
+exports.createAndIngestDocument = async ({ userId, title, filePath, fileName, fileSize, fileType, lectureId, lectureTitle }) => {
+  const doc = await Document.create({
+    userId,
+    title,
+    fileName,
+    fileSize: fileSize || 0,
+    fileType: fileType || "pdf",
+    status: "processing",
+    lectureId: lectureId || null,
+    lectureTitle: lectureTitle || "",
+    source: lectureId ? "lecture" : "standalone",
+  });
+
+  _ingestDocument(doc._id.toString(), filePath, fileName, title).catch(
+    (err) => errLog("Background ingest (lecture book) failed:", err.message)
+  );
+
+  return doc;
 };
 
 // ─────────────────────────────────────────────────────────────────

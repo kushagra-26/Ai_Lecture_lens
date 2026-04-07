@@ -57,6 +57,7 @@ export interface Lecture {
   videoUrl?: string | null
   audioUrl?: string | null
   pptUrl?: string | null
+  bookDocumentIds?: string[]
   status: "uploaded" | "queued" | "processing" | "completed" | "failed"
   errorMessage?: string
   transcript?: TranscriptLine[]
@@ -77,6 +78,7 @@ export interface LectureUploadPayload {
   videoFile?: File | null
   audioFile?: File | null
   pptFile?: File | null
+  bookFiles?: File[]
 }
 
 export interface LectureSummaryResponse {
@@ -105,6 +107,9 @@ export interface Document {
   errorMessage?: string
   chunkCount: number
   totalWords: number
+  lectureId?: string | null
+  lectureTitle?: string
+  source?: "standalone" | "lecture"
   chatHistory?: ChatMessage[]
   createdAt: string
   updatedAt: string
