@@ -8,7 +8,7 @@ from pathlib import Path
 AI_MODELS_DIR = os.path.join(os.path.dirname(__file__), "..", "backend", "src", "ai_models")
 sys.path.insert(0, AI_MODELS_DIR)
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
@@ -42,6 +42,18 @@ try:
 except Exception as _e:
     summarize_text = None
     print(f"[main] WARNING: summarize import failed: {_e}", file=sys.stderr)
+
+try:
+    from document_processor import process_document
+except Exception as _e:
+    process_document = None
+    print(f"[main] WARNING: document_processor import failed: {_e}", file=sys.stderr)
+
+try:
+    from vector_store import ingest, query as vs_query, delete as vs_delete, collection_exists
+except Exception as _e:
+    ingest = vs_query = vs_delete = collection_exists = None
+    print(f"[main] WARNING: vector_store import failed: {_e}", file=sys.stderr)
 
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -157,6 +169,92 @@ async def summarize(payload: dict):
         raise HTTPException(status_code=500, detail=f"Summarization failed: {e}")
 
 
+@app.post("/ingest-document")
+async def ingest_document(
+    file: UploadFile = File(...),
+    document_id: str = Form(""),
+    title: str = Form(""),
+):
+    """
+    Upload a PDF/DOCX/TXT, extract text, chunk it, embed and store in ChromaDB.
+    Returns chunk count so the caller can track indexing progress.
+    """
+    if process_document is None or ingest is None:
+        raise HTTPException(status_code=500, detail="Document processing modules unavailable")
+    if not document_id:
+        raise HTTPException(status_code=400, detail="`document_id` is required")
+
+    target = UPLOAD_DIR / file.filename
+    with open(target, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    try:
+        def _run():
+            result = process_document(str(target))
+            chunk_count = ingest(
+                document_id=document_id,
+                chunks=result["chunks"],
+                doc_metadata={"title": title, "file_name": file.filename},
+            )
+            return {"chunk_count": chunk_count, "total_words": result["total_words"]}
+
+        data = await asyncio.to_thread(_run)
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ingestion failed: {e}")
+    finally:
+        if target.exists():
+            target.unlink(missing_ok=True)
+
+
+@app.post("/query-document")
+async def query_document(payload: dict):
+    """
+    Semantic search over a document's vector store.
+    Returns top-k relevant chunks for use as RAG context.
+    """
+    if vs_query is None:
+        raise HTTPException(status_code=500, detail="Vector store module unavailable")
+
+    document_id = payload.get("document_id", "")
+    query_text = payload.get("query", "")
+    top_k = int(payload.get("top_k", 5))
+
+    if not document_id:
+        raise HTTPException(status_code=400, detail="`document_id` is required")
+    if not query_text:
+        raise HTTPException(status_code=400, detail="`query` is required")
+
+    try:
+        chunks = await asyncio.to_thread(vs_query, document_id, query_text, top_k)
+        return {"chunks": chunks}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Query failed: {e}")
+
+
+@app.delete("/delete-document/{document_id}")
+async def delete_document(document_id: str):
+    """Remove all vectors for a document from ChromaDB."""
+    if vs_delete is None:
+        raise HTTPException(status_code=500, detail="Vector store module unavailable")
+    ok = await asyncio.to_thread(vs_delete, document_id)
+    return {"deleted": ok}
+
+
+@app.get("/document-status/{document_id}")
+async def document_status(document_id: str):
+    """Check whether a document has been indexed in ChromaDB."""
+    if collection_exists is None:
+        raise HTTPException(status_code=500, detail="Vector store module unavailable")
+    exists = await asyncio.to_thread(collection_exists, document_id)
+    return {"indexed": exists}
+
+
 if __name__ == "__main__":
-    # Use multiple workers so concurrent requests don't block each other
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, workers=2)
+    import sys
+    # Windows doesn't support forked multiprocessing workers reliably.
+    # Use single worker with async concurrency (asyncio.to_thread handles CPU-bound tasks).
+    is_windows = sys.platform == "win32"
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, workers=1 if is_windows else 2)

@@ -84,3 +84,33 @@ export interface LectureSummaryResponse {
   status: Lecture["status"]
   errorMessage?: string
 }
+
+// ── Document / RAG ──────────────────────────────────────────────
+
+export interface ChatMessage {
+  _id?: string
+  role: "user" | "assistant"
+  content: string
+  createdAt?: string
+}
+
+export interface Document {
+  _id: string
+  userId: string
+  title: string
+  fileName: string
+  fileSize: number
+  fileType: string
+  status: "uploading" | "processing" | "ready" | "failed"
+  errorMessage?: string
+  chunkCount: number
+  totalWords: number
+  chatHistory?: ChatMessage[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ChatResponse {
+  answer: string
+  sources: { text: string; score: number }[]
+}

@@ -1,0 +1,211 @@
+const path = require("path");
+const fs = require("fs");
+const axios = require("axios");
+const FormData = require("form-data");
+const OpenAI = require("openai");
+const Document = require("../models/Document");
+
+const PYTHON_AI_URL = process.env.PYTHON_AI_URL || "http://localhost:8000";
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+const log = (...m) => console.log("[documentController]", ...m);
+const errLog = (...m) => console.error("[documentController]", ...m);
+
+// ─────────────────────────────────────────────────────────────────
+// POST /api/documents/upload
+// Accepts: multipart/form-data  { file, title }
+// ─────────────────────────────────────────────────────────────────
+exports.uploadDocument = async (req, res) => {
+  if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+
+  const title = req.body.title || path.parse(req.file.originalname).name;
+  const ext = path.extname(req.file.originalname).replace(".", "").toLowerCase();
+
+  // Create DB record immediately so frontend can poll status
+  const doc = await Document.create({
+    userId: req.user._id,
+    title,
+    fileName: req.file.originalname,
+    fileSize: req.file.size,
+    fileType: ext,
+    status: "processing",
+  });
+
+  // Kick off ingestion in background (don't await)
+  _ingestDocument(doc._id.toString(), req.file.path, req.file.originalname, title).catch(
+    (err) => errLog("Background ingest failed:", err.message)
+  );
+
+  res.status(201).json({ document: doc });
+};
+
+async function _ingestDocument(documentId, filePath, fileName, title) {
+  try {
+    const form = new FormData();
+    form.append("file", fs.createReadStream(filePath), fileName);
+    form.append("document_id", documentId);
+    form.append("title", title);
+
+    const response = await axios.post(`${PYTHON_AI_URL}/ingest-document`, form, {
+      headers: form.getHeaders(),
+      timeout: 120000,  // large PDFs can take time to embed
+    });
+
+    await Document.findByIdAndUpdate(documentId, {
+      status: "ready",
+      chunkCount: response.data.chunk_count,
+      totalWords: response.data.total_words,
+    });
+    log(`Ingested document ${documentId}: ${response.data.chunk_count} chunks`);
+  } catch (err) {
+    errLog(`Ingest failed for ${documentId}:`, err.message);
+    await Document.findByIdAndUpdate(documentId, {
+      status: "failed",
+      errorMessage: err.message,
+    });
+  } finally {
+    // Clean up uploaded file
+    fs.unlink(filePath, () => {});
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// GET /api/documents
+// List all documents for the authenticated user
+// ─────────────────────────────────────────────────────────────────
+exports.listDocuments = async (req, res) => {
+  const docs = await Document.find({ userId: req.user._id })
+    .select("-chatHistory")
+    .sort({ createdAt: -1 });
+  res.json({ documents: docs });
+};
+
+// ─────────────────────────────────────────────────────────────────
+// GET /api/documents/:id
+// Get a single document (with chat history)
+// ─────────────────────────────────────────────────────────────────
+exports.getDocument = async (req, res) => {
+  const doc = await Document.findOne({ _id: req.params.id, userId: req.user._id });
+  if (!doc) return res.status(404).json({ message: "Document not found" });
+  res.json({ document: doc });
+};
+
+// ─────────────────────────────────────────────────────────────────
+// DELETE /api/documents/:id
+// ─────────────────────────────────────────────────────────────────
+exports.deleteDocument = async (req, res) => {
+  const doc = await Document.findOne({ _id: req.params.id, userId: req.user._id });
+  if (!doc) return res.status(404).json({ message: "Document not found" });
+
+  // Remove vectors from ChromaDB
+  try {
+    await axios.delete(`${PYTHON_AI_URL}/delete-document/${doc._id}`, { timeout: 10000 });
+  } catch (err) {
+    errLog("Vector delete failed (continuing):", err.message);
+  }
+
+  await doc.deleteOne();
+  res.json({ message: "Document deleted" });
+};
+
+// ─────────────────────────────────────────────────────────────────
+// POST /api/documents/:id/chat
+// Body: { message: string }
+// RAG pipeline: retrieve context → ask OpenAI → return answer
+// ─────────────────────────────────────────────────────────────────
+exports.chatWithDocument = async (req, res) => {
+  const { message } = req.body;
+  if (!message?.trim()) return res.status(400).json({ message: "`message` is required" });
+
+  const doc = await Document.findOne({ _id: req.params.id, userId: req.user._id });
+  if (!doc) return res.status(404).json({ message: "Document not found" });
+  if (doc.status !== "ready") {
+    return res.status(400).json({ message: "Document is still being processed. Try again shortly." });
+  }
+
+  // 1. Retrieve relevant chunks from ChromaDB
+  let contextChunks = [];
+  try {
+    const resp = await axios.post(`${PYTHON_AI_URL}/query-document`, {
+      document_id: doc._id.toString(),
+      query: message,
+      top_k: 5,
+    }, { timeout: 15000 });
+    contextChunks = resp.data.chunks || [];
+  } catch (err) {
+    errLog("Vector query failed:", err.message);
+    return res.status(500).json({ message: "Failed to search document. Please try again." });
+  }
+
+  // 2. Build RAG prompt
+  const contextText = contextChunks
+    .map((c, i) => `[Excerpt ${i + 1}]\n${c.text}`)
+    .join("\n\n");
+
+  const systemPrompt = `You are a helpful study assistant. The user is asking questions about a document titled "${doc.title}".
+Answer ONLY based on the provided excerpts from the document. If the answer is not found in the excerpts, say so clearly.
+Keep answers concise, accurate, and educational.`;
+
+  // Include last 6 messages for conversational context
+  const recentHistory = (doc.chatHistory || []).slice(-6).map((m) => ({
+    role: m.role,
+    content: m.content,
+  }));
+
+  const messages = [
+    { role: "system", content: systemPrompt },
+    {
+      role: "user",
+      content: `Document excerpts:\n\n${contextText}\n\n---\nQuestion: ${message}`,
+    },
+    ...recentHistory,
+    { role: "user", content: message },
+  ];
+
+  // 3. Call OpenAI
+  let answer = "";
+  try {
+    const completion = await openai.chat.completions.create({
+      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+      messages,
+      max_tokens: 600,
+      temperature: 0.3,
+    });
+    answer = completion.choices[0].message.content.trim();
+  } catch (err) {
+    errLog("OpenAI chat failed:", err.message);
+    // Fallback: return raw context chunks if OpenAI is unavailable
+    answer = `Here are the most relevant sections I found:\n\n${contextChunks.map((c) => c.text).join("\n\n")}`;
+  }
+
+  // 4. Persist chat history
+  await Document.findByIdAndUpdate(doc._id, {
+    $push: {
+      chatHistory: {
+        $each: [
+          { role: "user", content: message },
+          { role: "assistant", content: answer },
+        ],
+      },
+    },
+  });
+
+  res.json({
+    answer,
+    sources: contextChunks.map((c) => ({
+      text: c.text.slice(0, 200) + (c.text.length > 200 ? "..." : ""),
+      score: c.score,
+    })),
+  });
+};
+
+// ─────────────────────────────────────────────────────────────────
+// DELETE /api/documents/:id/chat
+// Clear chat history for a document
+// ─────────────────────────────────────────────────────────────────
+exports.clearChat = async (req, res) => {
+  const doc = await Document.findOne({ _id: req.params.id, userId: req.user._id });
+  if (!doc) return res.status(404).json({ message: "Document not found" });
+  await Document.findByIdAndUpdate(doc._id, { $set: { chatHistory: [] } });
+  res.json({ message: "Chat history cleared" });
+};
