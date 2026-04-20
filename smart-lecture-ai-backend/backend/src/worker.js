@@ -82,7 +82,6 @@ async function run() {
       await lecture.save();
 
       // 5️⃣ Cleanup temp files (downloaded YT videos, etc.)
-      const tmpDir = path.join(__dirname, "../../tmp");
       try {
         if (fs.existsSync(tmpDir)) {
           const tmpFiles = fs.readdirSync(tmpDir);
