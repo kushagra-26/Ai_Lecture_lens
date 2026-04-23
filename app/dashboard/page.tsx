@@ -11,6 +11,8 @@ import {
   FileText, Plus, ArrowRight, Sparkles,
   TrendingUp, CheckCircle2, Clock, BarChart3,
 } from "lucide-react"
+import { ParticleCanvas } from "@/components/3d/ParticleCanvas"
+import { TiltCard } from "@/components/3d/TiltCard"
 
 export default function DashboardPage() {
   const router = useRouter()
@@ -59,13 +61,27 @@ export default function DashboardPage() {
   )
 
   return (
-    <div className="space-y-6">
+    <div className="relative">
+      <ParticleCanvas />
+      {/* Gradient blobs — ambient depth behind content */}
+      <div
+        className="absolute top-0 right-0 w-[480px] h-[480px] rounded-full pointer-events-none"
+        style={{ background: "radial-gradient(circle, rgba(234,179,8,0.07) 0%, transparent 65%)", zIndex: 0 }}
+        aria-hidden
+      />
+      <div
+        className="absolute bottom-0 left-0 w-80 h-80 rounded-full pointer-events-none"
+        style={{ background: "radial-gradient(circle, rgba(180,145,55,0.05) 0%, transparent 65%)", zIndex: 0 }}
+        aria-hidden
+      />
+      <div className="relative space-y-6" style={{ zIndex: 1 }}>
 
       {/* ── Greeting ── */}
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-1.5">{greeting}</p>
-          <h1 className="text-[26px] font-bold tracking-tight text-foreground leading-tight">
+          <h1 className="text-[26px] font-bold tracking-tight leading-tight"
+            style={{ background: "linear-gradient(135deg, #1C1917 0%, #92400e 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
             {user.name?.split(" ")[0]}
           </h1>
           <p className="text-[14px] text-muted-foreground mt-1">
@@ -112,22 +128,23 @@ export default function DashboardPage() {
             iconBg: "bg-foreground/8", iconColor: "text-foreground/70",
           },
         ] as const).map((s) => (
-          <button
-            key={s.label}
-            onClick={() => router.push(s.href)}
-            className="group text-left p-5 rounded-2xl bg-card border border-border shadow-warm hover:shadow-warm-md hover:border-primary/30 transition-all duration-200"
-          >
-            <div className="flex items-center justify-between mb-4">
-              <div className={`h-9 w-9 rounded-xl flex items-center justify-center ${s.iconBg}`}>
-                <s.icon className={`h-[17px] w-[17px] ${s.iconColor}`} />
+          <TiltCard key={s.label}>
+            <button
+              onClick={() => router.push(s.href)}
+              className="group w-full text-left p-5 rounded-2xl bg-card border border-border shadow-warm hover:shadow-warm-md hover:border-primary/30 transition-all duration-200"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div className={`h-9 w-9 rounded-xl flex items-center justify-center ${s.iconBg}`}>
+                  <s.icon className={`h-[17px] w-[17px] ${s.iconColor}`} />
+                </div>
+                <ArrowRight className="h-3.5 w-3.5 text-transparent group-hover:text-muted-foreground transition-colors" />
               </div>
-              <ArrowRight className="h-3.5 w-3.5 text-transparent group-hover:text-muted-foreground transition-colors" />
-            </div>
-            <p className="text-[26px] font-bold tracking-tight text-foreground">{s.value}</p>
-            <p className="text-[12px] text-muted-foreground mt-0.5 mb-3">{s.sub}</p>
-            <Progress value={s.progress} className="h-1" />
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60 mt-2">{s.label}</p>
-          </button>
+              <p className="text-[26px] font-bold tracking-tight text-foreground">{s.value}</p>
+              <p className="text-[12px] text-muted-foreground mt-0.5 mb-3">{s.sub}</p>
+              <Progress value={s.progress} className="h-1" />
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60 mt-2">{s.label}</p>
+            </button>
+          </TiltCard>
         ))}
       </div>
 
@@ -239,14 +256,19 @@ export default function DashboardPage() {
               ))}
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center py-16 rounded-2xl bg-card border border-dashed border-border gap-3">
-              <BookOpen className="h-12 w-12 text-muted-foreground/20" />
-              <p className="text-[14px] font-medium text-muted-foreground">No lectures yet</p>
-              <Button size="sm"
-                className="bg-foreground text-background hover:bg-foreground/90 h-8 px-4 text-[12px] rounded-lg"
-                onClick={() => router.push("/dashboard/lectures")}>
-                <Plus className="mr-1.5 h-3 w-3" /> Upload first lecture
-              </Button>
+            <div className="relative flex flex-col items-center justify-center py-16 rounded-2xl bg-card border border-dashed border-border gap-3 overflow-hidden">
+              <div className="bg-dot-grid absolute inset-0 opacity-40 pointer-events-none" aria-hidden />
+              <div className="relative z-10 flex flex-col items-center gap-3">
+                <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-amber-50 to-orange-100 border border-amber-200/60 flex items-center justify-center shadow-warm">
+                  <BookOpen className="h-6 w-6 text-amber-500" />
+                </div>
+                <p className="text-[14px] font-medium text-muted-foreground">No lectures yet</p>
+                <Button size="sm"
+                  className="bg-foreground text-background hover:bg-foreground/90 h-8 px-4 text-[12px] rounded-lg"
+                  onClick={() => router.push("/dashboard/lectures")}>
+                  <Plus className="mr-1.5 h-3 w-3" /> Upload first lecture
+                </Button>
+              </div>
             </div>
           )}
         </div>
@@ -322,6 +344,7 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+      </div>
       </div>
     </div>
   )
