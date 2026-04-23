@@ -76,15 +76,26 @@ export default function DashboardPage() {
       />
       <div className="relative space-y-6" style={{ zIndex: 1 }}>
 
+      {/* ── Section label — Behance inspired "OVERVIEW 01" ── */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-muted-foreground/50">Overview</span>
+          <span className="flex-1 h-px w-10 bg-border" />
+        </div>
+        <span className="text-[10px] font-bold tracking-[0.18em] text-muted-foreground/30">01</span>
+      </div>
+
       {/* ── Greeting ── */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-end justify-between gap-4 -mt-2">
         <div>
-          <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-1.5">{greeting}</p>
-          <h1 className="text-[26px] font-bold tracking-tight leading-tight"
-            style={{ background: "linear-gradient(135deg, #1C1917 0%, #92400e 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+          <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-3">{greeting},</p>
+          <h1
+            className="text-[48px] font-bold tracking-tight leading-[1.0]"
+            style={{ background: "linear-gradient(135deg, #1C1917 30%, #92400e 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}
+          >
             {user.name?.split(" ")[0]}
           </h1>
-          <p className="text-[14px] text-muted-foreground mt-1">
+          <p className="text-[13px] text-muted-foreground mt-3">
             {lectureCounts.completed > 0
               ? `${lectureCounts.completed} of ${lectureCounts.total} lectures completed`
               : "Upload your first lecture to begin."}
@@ -92,7 +103,7 @@ export default function DashboardPage() {
           </p>
         </div>
         <Button
-          className="bg-foreground text-background hover:bg-foreground/90 h-9 px-5 text-[13px] font-semibold rounded-lg shadow-warm shrink-0"
+          className="bg-foreground text-background hover:bg-foreground/90 h-9 px-5 text-[13px] font-semibold rounded-lg shadow-warm shrink-0 mb-1"
           onClick={() => router.push("/dashboard/lectures")}
         >
           <Plus className="mr-1.5 h-3.5 w-3.5" />
@@ -100,49 +111,43 @@ export default function DashboardPage() {
         </Button>
       </div>
 
-      {/* ── 4 stat cards ── */}
+      {/* ── Achievement strip (700+ / 85% / 2x style) ── */}
+      <div className="grid grid-cols-3 divide-x divide-border rounded-2xl border border-border bg-card shadow-warm overflow-hidden">
+        {([
+          { value: String(lectureCounts.total || 0), label: "Lectures Uploaded" },
+          { value: `${avgScore}%`,                   label: "Average Score"     },
+          { value: String(attempts.length || 0),     label: "Quiz Attempts"     },
+        ]).map((s) => (
+          <div key={s.label} className="py-5 px-6 text-center">
+            <p className="text-[36px] font-bold tracking-tight text-foreground leading-none">{s.value}</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/60 mt-2">{s.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* ── 4 stat cards — editorial number-first ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {([
-          {
-            icon: BookOpen, label: "Lectures",
-            value: lectureCounts.total, sub: `${lectureCounts.completed} completed`,
-            progress: completionPct, href: "/dashboard/lectures",
-            iconBg: "bg-foreground/8", iconColor: "text-foreground/70",
-          },
-          {
-            icon: Trophy, label: "Avg Score",
-            value: `${avgScore}%`, sub: `Best: ${bestScore}%`,
-            progress: avgScore, href: "/dashboard/scores",
-            iconBg: "bg-[#EAB308]/12", iconColor: "text-[#EAB308]",
-          },
-          {
-            icon: Brain, label: "Attempts",
-            value: attempts.length, sub: `Pass rate ${passRate}%`,
-            progress: passRate, href: "/dashboard/analytics",
-            iconBg: "bg-foreground/8", iconColor: "text-foreground/70",
-          },
-          {
-            icon: BarChart3, label: "Attendance",
-            value: `${user.attendance || 0}%`, sub: "This semester",
-            progress: user.attendance || 0, href: "/dashboard/progress",
-            iconBg: "bg-foreground/8", iconColor: "text-foreground/70",
-          },
+          { label: "Lectures",   value: lectureCounts.total,      sub: `${lectureCounts.completed} done`,  progress: completionPct,          href: "/dashboard/lectures",  accent: "text-foreground"   },
+          { label: "Avg Score",  value: `${avgScore}%`,            sub: `Best ${bestScore}%`,               progress: avgScore,               href: "/dashboard/scores",    accent: "text-[#D97706]"    },
+          { label: "Attempts",   value: attempts.length,           sub: `${passRate}% pass rate`,           progress: passRate,               href: "/dashboard/analytics", accent: "text-foreground"   },
+          { label: "Attendance", value: `${user.attendance || 0}%`,sub: "This semester",                    progress: user.attendance || 0,   href: "/dashboard/progress",  accent: "text-foreground"   },
         ] as const).map((s) => (
           <TiltCard key={s.label}>
             <button
               onClick={() => router.push(s.href)}
-              className="group w-full text-left p-5 rounded-2xl bg-card border border-border shadow-warm hover:shadow-warm-md hover:border-primary/30 transition-all duration-200"
+              className="group w-full text-left px-5 pt-5 pb-4 rounded-2xl bg-card border border-border shadow-warm hover:shadow-warm-md hover:border-primary/30 transition-all duration-200"
             >
-              <div className="flex items-center justify-between mb-4">
-                <div className={`h-9 w-9 rounded-xl flex items-center justify-center ${s.iconBg}`}>
-                  <s.icon className={`h-[17px] w-[17px] ${s.iconColor}`} />
-                </div>
-                <ArrowRight className="h-3.5 w-3.5 text-transparent group-hover:text-muted-foreground transition-colors" />
+              <p className={`text-[38px] font-bold tracking-tight leading-none ${s.accent}`}>{s.value}</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/55 mt-2.5">{s.label}</p>
+              <p className="text-[11px] text-muted-foreground mt-1 mb-4">{s.sub}</p>
+              {/* Thin progress line — Behance style */}
+              <div className="h-[2px] bg-border rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-primary/50 rounded-full transition-all duration-700"
+                  style={{ width: `${s.progress}%` }}
+                />
               </div>
-              <p className="text-[26px] font-bold tracking-tight text-foreground">{s.value}</p>
-              <p className="text-[12px] text-muted-foreground mt-0.5 mb-3">{s.sub}</p>
-              <Progress value={s.progress} className="h-1" />
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60 mt-2">{s.label}</p>
             </button>
           </TiltCard>
         ))}
@@ -204,8 +209,17 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {/* ── Section label ── */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-muted-foreground/50">Activity</span>
+          <span className="h-px w-10 bg-border" />
+        </div>
+        <span className="text-[10px] font-bold tracking-[0.18em] text-muted-foreground/30">02</span>
+      </div>
+
       {/* ── Main grid ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 -mt-2">
 
         {/* Lecture list */}
         <div className="lg:col-span-2 space-y-3">
