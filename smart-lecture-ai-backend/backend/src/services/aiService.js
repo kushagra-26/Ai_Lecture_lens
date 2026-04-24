@@ -8,25 +8,38 @@ const FormData = require("form-data");
 const Groq = require("groq-sdk");
 const { geminiChat, geminiJSON } = require("./gemini");
 
+=======
+const Groq = require("groq-sdk");
+const { geminiChat, geminiJSON } = require("./gemini");
+
 // ── Python / FastAPI config ──
 const PYTHON_VENV_PATH = process.env.PYTHON_PATH || "python";
-const AI_MODELS_DIR = path.join(__dirname, "../ai_models");
+const AI_MODELS_DIR = path.join(__dirname, "../ ai_models");
 const PYTHON_AI_URL = process.env.PYTHON_AI_URL || "http://localhost:8000";
-const TRANSCRIBE_URL = process.env.TRANSCRIBE_SERVICE_URL || `${PYTHON_AI_URL}/transcribe`;
-const EXTRACT_URL = process.env.EXTRACT_SERVICE_URL || `${PYTHON_AI_URL}/extract`;
-const QUIZ_URL = process.env.QUIZ_SERVICE_URL || `${PYTHON_AI_URL}/quiz`;
-const SUMMARIZE_URL = process.env.SUMMARIZE_SERVICE_URL || `${PYTHON_AI_URL}/summarize`;
-const CLEAN_URL = process.env.CLEAN_SERVICE_URL || `${PYTHON_AI_URL}/clean`;
+// FastAPI service URLs (preferred)
+const TRANSCRIBE_URL = process.env.TRANSCRIBE_SERVICE_URL || null;
+const EXTRACT_URL = process.env.EXTRACT_SERVICE_URL || null;
+const QUIZ_URL = process.env.QUIZ_SERVICE_URL || null;
+const SUMMARIZE_URL = process.env.SUMMARIZE_SERVICE_URL || null;
+const CLEAN_URL = process.env.CLEAN_SERVICE_URL
+  || (SUMMARIZE_URL ? SUMMARIZE_URL.replace("/summarize", "/clean") : null);
 
+const groqClient = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
 // ── Groq client (for Whisper + LLM fallback) ──
 const groqClient = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
 
 const log = (...msg) => console.log("[aiService]", ...msg);
 const errLog = (...msg) => console.error("[aiService]", ...msg);
+const GROQ_MAX_UPLOAD_BYTES = 24 * 1024 * 1024;
 
-/* ===========================================================
-   Text preparation — clean + extract key sentences
-   =========================================================== */
+function axiosErrorDetail(err) {
+  const detail = err.response?.data?.detail || err.response?.data?.error || err.response?.data;
+  if (detail) {
+    return typeof detail === "string" ? detail : JSON.stringify(detail);
+  }
+  return err.message;
+}
+
 const STOP_WORDS = new Set([
   "the","a","an","and","or","but","in","on","at","to","for","of","with",
   "is","are","was","were","be","been","being","have","has","had","do","does",
@@ -100,9 +113,6 @@ exports.prepareText = async (rawText) => {
   return prepared;
 };
 
-/* ===========================================================
-   Helper: send file to FastAPI endpoint
-   =========================================================== */
 async function sendFileToService(url, filePath) {
   const form = new FormData();
   form.append("file", fs.createReadStream(filePath), path.basename(filePath));
@@ -115,9 +125,6 @@ async function sendFileToService(url, filePath) {
   return res.data;
 }
 
-/* ===========================================================
-   Download from URL
-   =========================================================== */
 async function downloadFileFromUrl(fileUrl, outDir, prefix = "audio") {
   log("Downloading:", fileUrl);
   if (!fileUrl) throw new Error("No URL provided");
@@ -138,13 +145,57 @@ async function downloadFileFromUrl(fileUrl, outDir, prefix = "audio") {
   return filePath;
 }
 
-/* ===========================================================
-   Download YouTube via yt-dlp
-   =========================================================== */
 function findYtDlp() {
   for (const cmd of [process.env.YT_DLP_PATH, "yt-dlp", "yt-dlp.exe"].filter(Boolean)) {
     try { execFileSync(cmd, ["--version"], { stdio: "pipe" }); return cmd; } catch {}
   }
+  throw new Error("yt-dlp not found.");
+}
+
+function findFfmpeg() {
+  for (const cmd of [process.env.FFMPEG_PATH, "ffmpeg", "ffmpeg.exe"].filter(Boolean)) {
+    try { execFileSync(cmd, ["-version"], { stdio: "pipe" }); return cmd; } catch {}
+  }
+  try {
+    const bundled = execFileSync(
+      PYTHON_VENV_PATH,
+      ["-c", "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())"],
+      { encoding: "utf8", stdio: "pipe" }
+    ).trim();
+    if (bundled && fs.existsSync(bundled)) return bundled;
+  } catch {}
+  return null;
+}
+
+function prepareWhisperFile(filePath) {
+  const size = fs.statSync(filePath).size;
+  if (size <= GROQ_MAX_UPLOAD_BYTES && ![".mp4", ".mkv", ".webm", ".mov", ".avi"].includes(path.extname(filePath).toLowerCase())) {
+    return { filePath, cleanupPath: null };
+  }
+
+  const ffmpeg = findFfmpeg();
+  if (!ffmpeg) return { filePath, cleanupPath: null };
+
+  const outPath = path.join(path.dirname(filePath), `whisper_${Date.now()}.mp3`);
+  const result = spawnSync(ffmpeg, [
+    "-y",
+    "-i", filePath,
+    "-vn",
+    "-ac", "1",
+    "-ar", "16000",
+    "-b:a", "32k",
+    outPath,
+  ], { encoding: "utf8", timeout: 300000 });
+
+  if (result.status !== 0 || !fs.existsSync(outPath)) {
+    errLog("ffmpeg audio compression failed:", result.stderr?.trim() || result.error?.message || "unknown");
+    return { filePath, cleanupPath: null };
+  }
+
+  const compressedSize = fs.statSync(outPath).size;
+  log(`Compressed audio for Whisper: ${Math.round(size / 1024 / 1024)}MB -> ${Math.round(compressedSize / 1024 / 1024)}MB`);
+  return { filePath: outPath, cleanupPath: outPath };
+  throw new Error("yt-dlp not found. Install it: https://github.com/yt-dlp/yt-dlp#installation");
   throw new Error("yt-dlp not found. Install: https://github.com/yt-dlp/yt-dlp#installation");
 }
 
@@ -154,64 +205,68 @@ async function downloadYouTubeVideo(url, outDir) {
 
   const ytDlp = findYtDlp();
   const outTemplate = path.join(outDir, `youtube_${Date.now()}.%(ext)s`);
-
-  const result = spawnSync(ytDlp, [
+  const args = [
     url,
-    "--format", "bestaudio/best",
+    "--format", "18/best",
     "--output", outTemplate,
-    "--no-playlist", "--no-warnings", "--no-update", "--quiet",
-  ], { encoding: "utf8", timeout: 300000 });
+    "--no-playlist",
+    "--quiet",
+    "--socket-timeout", "30",
+    "--retries", "3",
+  ];
+
+  const result = spawnSync(ytDlp, args, { encoding: "utf8", timeout: 300000 });
 
   if (result.status !== 0) {
-    throw new Error(`yt-dlp failed: ${result.stderr?.trim() || result.error?.message || "unknown"}`);
+    throw new Error(`yt-dlp failed: ${result.stderr?.trim() || result.error?.message}`);
   }
 
   const files = fs.readdirSync(outDir)
     .map(f => path.join(outDir, f))
-    .filter(f => f.includes("youtube_") && fs.statSync(f).isFile())
-    .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+    .filter(f => f.includes("youtube_"));
 
-  if (!files.length) throw new Error("yt-dlp ran but no output file found");
-  log("YouTube saved:", files[0]);
   return files[0];
 }
 
-/* ===========================================================
-   Transcription
-   Priority: Groq Whisper API → FastAPI local Whisper → spawnSync
-   =========================================================== */
+function normalizeTranscript(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.transcript)) return data.transcript;
+  if (Array.isArray(data?.segments)) return data.segments;
+  if (typeof data?.text === "string" && data.text.trim()) {
+    return [{ start: 0, end: 0, text: data.text.trim() }];
+  }
+  return [];
+}
+
 exports.transcribe = async (filePath) => {
   log("Transcribing:", filePath);
 
-  // ── 1. Groq Whisper API (~10s for a full lecture, free) ──
   if (groqClient) {
+    const whisperFile = prepareWhisperFile(filePath);
     try {
-      log("Transcribing via Groq Whisper API...");
       const transcription = await groqClient.audio.transcriptions.create({
-        file: fs.createReadStream(filePath),
+        file: fs.createReadStream(whisperFile.filePath),
         model: "whisper-large-v3-turbo",
         response_format: "verbose_json",
         timestamp_granularities: ["segment"],
       });
-
-      const segments = (transcription.segments || [])
-        .filter(s => s.text?.trim())
-        .map(s => ({ start: round2(s.start), end: round2(s.end), text: s.text.trim() }));
-
-      log(`Groq Whisper: ${segments.length} segments`);
-      if (segments.length > 0) return segments;
+      return normalizeTranscript(transcription);
     } catch (err) {
-      errLog("Groq Whisper failed, falling back:", err.message);
+      errLog("Groq Whisper failed:", err.message);
+    } finally {
+      if (whisperFile.cleanupPath) {
+        fs.rmSync(whisperFile.cleanupPath, { force: true });
+      }
     }
   }
 
-  // ── 2. FastAPI local Whisper ──
   if (TRANSCRIBE_URL) {
     try {
       const data = await sendFileToService(TRANSCRIBE_URL, filePath);
-      log("Transcription via FastAPI:", Array.isArray(data) ? data.length : "ok");
-      return Array.isArray(data) ? data : data.transcript || [];
+      return normalizeTranscript(data);
     } catch (err) {
+      errLog("FastAPI transcribe failed:", err.message);
+    }
       errLog("FastAPI transcribe failed, falling back to local:", err.message, err.code || "");
     }
   }
@@ -225,39 +280,38 @@ exports.transcribe = async (filePath) => {
     errLog("Local transcribe failed:", err.message);
     return [];
   }
+
+  return [];
 };
 
-function round2(n) { return Math.round(n * 100) / 100; }
-
-/* ===========================================================
-   Frame / Slide Extraction
-   =========================================================== */
 exports.extract = async (filePath) => {
   log("Extracting frames:", filePath);
 
   if (EXTRACT_URL) {
     try {
       const data = await sendFileToService(EXTRACT_URL, filePath);
-      log("Extraction via FastAPI:", data.frames?.length || "ok");
-      return data.frames || data;
+      return Array.isArray(data) ? data : data.frames || [];
     } catch (err) {
-      errLog("FastAPI extract failed, falling back to local:", err.message);
+      errLog("FastAPI extract failed:", err.message);
     }
   }
 
+  return [];
+};
+
+exports.ingestLectureText = async (lectureId, text) => {
+  if (!text?.trim()) return false;
   try {
-    const result = spawnSync(PYTHON_VENV_PATH, [path.join(AI_MODELS_DIR, "extractor.py"), filePath], { encoding: "utf8" });
-    if (result.error) throw new Error(result.error.message);
-    return JSON.parse(result.stdout.toString().trim() || "[]");
-  } catch (err) {
-    errLog("Local extract failed:", err.message);
-    return [];
+    await axios.post(`${PYTHON_AI_URL}/ingest-text`, {
+      document_id: `lecture_${lectureId}`,
+      text,
+    });
+    return true;
+  } catch {
+    return false;
   }
 };
 
-/* ===========================================================
-   Vector store helpers
-   =========================================================== */
 async function queryVectors(documentId, query, topK = 5) {
   try {
     const resp = await axios.post(
@@ -267,64 +321,123 @@ async function queryVectors(documentId, query, topK = 5) {
     );
     return resp.data.chunks || [];
   } catch (err) {
-    errLog(`Vector query failed for ${documentId}:`, err.message);
+    errLog(`Vector query failed for ${documentId}:`, axiosErrorDetail(err));
     return [];
   }
 }
 
-exports.ingestLectureText = async (lectureId, text) => {
-  if (!text?.trim()) return false;
-  try {
-    await axios.post(
-      `${PYTHON_AI_URL}/ingest-text`,
-      { document_id: `lecture_${lectureId}`, text, title: `Lecture ${lectureId}` },
-      { timeout: 120000 }
-    );
-    log(`Ingested lecture transcript for ${lectureId}`);
-    return true;
-  } catch (err) {
-    errLog(`Lecture text ingest failed for ${lectureId}:`, err.message);
-    return false;
+exports.dualSummarize = async (cleanText, { lectureId, bookDocumentIds = [] } = {}) => {
+  log("Summarizing, text length:", cleanText?.length || 0);
+  let localSummary = "";
+  let aiSummary = "";
+  let semanticContext = "";
+
+  if (lectureId) {
+    const allChunks = [];
+    for (const q of ["main topics and key concepts", "important definitions and explanations", "examples and applications"]) {
+      allChunks.push(...await queryVectors(`lecture_${lectureId}`, q, 4));
+    }
+    for (const bookId of bookDocumentIds) {
+      allChunks.push(...await queryVectors(bookId, "relevant theory and concepts", 3));
+    }
+
+    const seen = new Set();
+    const unique = allChunks.filter((c) => {
+      const key = `${c.chunk_index ?? c.text?.slice(0, 40)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    if (unique.length > 0) {
+      semanticContext = unique.map((c, i) => `[Section ${i + 1}]\n${c.text}`).join("\n\n");
+      log(`Summary semantic context: ${unique.length} chunks`);
+    }
   }
+
+  if (!semanticContext && SUMMARIZE_URL) {
+    try {
+      const res = await axios.post(SUMMARIZE_URL, { text: cleanText }, { timeout: 120000 });
+      localSummary = res.data?.summary || "";
+    } catch (err) {
+      errLog("FastAPI summarize failed:", err.message);
+    }
+  }
+
+  try {
+    const content = semanticContext || cleanText;
+    const systemPrompt = semanticContext
+      ? "You are an expert educational AI. Generate a clear lecture summary with sections: Overview, Key Concepts, Important Details, Takeaways."
+      : "You are a helpful summarization assistant for lecture notes. Provide a clear, structured summary with key points and takeaways.";
+    aiSummary = await geminiChat(systemPrompt, content, { maxTokens: 4096, temperature: 0.3 });
+  } catch (err) {
+    errLog("LLM summarize failed:", err.message);
+  }
+
+  return { localSummary, aiSummary };
 };
 
-/* ===========================================================
-   Quiz Generation (Gemini/Groq LLM + local Flan-T5)
-   =========================================================== */
 exports.generateQuiz = async (text, numQuestions = 5, { lectureId, bookDocumentIds = [] } = {}) => {
-  log(`Generating quiz, text length: ${text?.length || 0}`);
+  log("Generating quiz, text length:", text?.length || 0);
   let localQuiz = [];
   let aiQuiz = [];
   let aiQuizStructured = [];
-
-  // ── Semantic context from ChromaDB ──
   let semanticContext = "";
+
   if (lectureId) {
     const allChunks = [];
-    const lectureChunks = await queryVectors(`lecture_${lectureId}`, "key concepts definitions examples", 6);
-    allChunks.push(...lectureChunks);
+    allChunks.push(...await queryVectors(`lecture_${lectureId}`, "key concepts definitions examples", 6));
     for (const bookId of bookDocumentIds) {
       allChunks.push(...await queryVectors(bookId, "key concepts definitions", 3));
     }
     if (allChunks.length > 0) {
       semanticContext = allChunks.map((c, i) => `[Section ${i + 1}]\n${c.text}`).join("\n\n");
-      log(`Quiz semantic context: ${allChunks.length} chunks`);
     }
   }
 
   const quizContent = semanticContext || text;
 
-  // ── Local Flan-T5 quiz via FastAPI ──
-  let localQuizStructured = [];
   if (QUIZ_URL) {
     try {
-      const data = await axios.post(QUIZ_URL, { text: quizContent, num_questions: numQuestions }, { timeout: 120000 });
-      const result = data.data;
-      if (result.structured && Array.isArray(result.structured)) localQuizStructured = result.structured;
-      if (result.questions) localQuiz = result.questions.map(q => typeof q === "string" ? q : q.question || JSON.stringify(q));
-      log("Quiz via FastAPI:", localQuiz.length, "questions");
+      const res = await axios.post(
+        QUIZ_URL,
+        { text: quizContent, num_questions: numQuestions },
+        { timeout: 300000 }
+      );
+      if (Array.isArray(res.data?.structured)) {
+        aiQuizStructured = res.data.structured;
+      }
+      if (Array.isArray(res.data?.questions)) {
+        localQuiz = res.data.questions.map((q) => typeof q === "string" ? q : q.question || JSON.stringify(q));
+      // Use new structured MCQ format from Flan-T5 when available
+      if (result.structured && Array.isArray(result.structured)) {
+        localQuizStructured = result.structured;
+        log("Quiz via FastAPI (structured):", localQuizStructured.length, "MCQs");
+      }
+      if (result.questions) {
+        localQuiz = result.questions.map(q => typeof q === 'string' ? q : q.question || JSON.stringify(q));
+      }
     } catch (err) {
       errLog("FastAPI quiz failed:", err.message);
+    }
+  }
+
+  try {
+    const systemPrompt = `You are an educational AI. Generate multiple-choice quizzes as JSON.
+Return ONLY: {"questions":[{"question":"...","options":["A","B","C","D"],"correctAnswer":0}]}
+correctAnswer is a 0-based index. Generate exactly ${numQuestions} questions.`;
+    const parsed = await geminiJSON(systemPrompt, `Generate ${numQuestions} MCQs from:\n${quizContent}`);
+
+    if (Array.isArray(parsed.questions)) {
+      aiQuizStructured = parsed.questions;
+      const letters = ["A", "B", "C", "D"];
+      aiQuiz = parsed.questions.map((q, i) => {
+        const opts = (q.options || []).map((o, j) => `${letters[j]}) ${o}`).join("\n");
+        return `Q${i + 1}. ${q.question}\n${opts}\nAnswer: ${letters[q.correctAnswer] || "A"}`;
+      });
+    }
+  } catch (err) {
+    errLog("LLM quiz failed:", err.message);
     }
   }
 
@@ -360,67 +473,6 @@ Make questions test understanding. Each option should be plausible. Avoid "All o
   };
 };
 
-/* ===========================================================
-   Summarization (Gemini/Groq LLM + local BART)
-   =========================================================== */
-exports.dualSummarize = async (cleanText, { lectureId, bookDocumentIds = [] } = {}) => {
-  log("Summarizing, text length:", cleanText?.length || 0);
-  let localSummary = "";
-  let aiSummary = "";
-
-  // ── Semantic retrieval from ChromaDB ──
-  let semanticContext = "";
-  if (lectureId) {
-    const allChunks = [];
-    for (const q of ["main topics and key concepts", "important definitions and explanations", "examples and applications"]) {
-      allChunks.push(...await queryVectors(`lecture_${lectureId}`, q, 4));
-    }
-    for (const bookId of bookDocumentIds) {
-      allChunks.push(...await queryVectors(bookId, "relevant theory and concepts", 3));
-    }
-    const seen = new Set();
-    const unique = allChunks.filter(c => {
-      const key = `${c.chunk_index ?? c.text?.slice(0, 40)}`;
-      if (seen.has(key)) return false;
-      seen.add(key); return true;
-    });
-    if (unique.length > 0) {
-      semanticContext = unique.map((c, i) => `[Section ${i + 1}]\n${c.text}`).join("\n\n");
-      log(`Summary semantic context: ${unique.length} chunks`);
-    }
-  }
-
-  // ── Local BART (only when no semantic context) ──
-  if (!semanticContext && SUMMARIZE_URL) {
-    try {
-      const res = await axios.post(SUMMARIZE_URL, { text: cleanText }, { timeout: 120000 });
-      localSummary = res.data?.summary || "";
-      log("FastAPI summary length:", localSummary.length);
-    } catch (err) {
-      errLog("FastAPI summarize failed:", err.message);
-    }
-  }
-
-  // ── Gemini/Groq summary ──
-  try {
-    const contentToSummarize = semanticContext || cleanText;
-    const hasBooks = bookDocumentIds?.length > 0;
-    const systemPrompt = semanticContext
-      ? `You are an expert educational AI. Generate a comprehensive, well-structured summary from the lecture content${hasBooks ? " and supplementary book material" : ""}. Use this format:\n\n## Overview\n## Key Concepts\n## Important Details\n## Takeaways\n\nBe concise, clear, and educational.`
-      : "You are a helpful summarization assistant for lecture notes. Provide a clear, structured summary with key points and takeaways. Use markdown formatting with headers.";
-
-    aiSummary = await geminiChat(systemPrompt, contentToSummarize, { maxTokens: 4096, temperature: 0.3 });
-    log("LLM summary length:", aiSummary.length);
-  } catch (err) {
-    errLog("LLM summarize failed:", err.message);
-  }
-
-  return { localSummary, aiSummary };
-};
-
-/* ===========================================================
-   Prepare Inputs
-   =========================================================== */
 exports.prepareInputs = async ({ videoPath, audioPath, pptPath, youtubeUrl, audioUrl, tmpDir }) => {
   log("Preparing inputs:", { videoPath, audioPath, pptPath, youtubeUrl, audioUrl });
   try {
@@ -430,6 +482,14 @@ exports.prepareInputs = async ({ videoPath, audioPath, pptPath, youtubeUrl, audi
     if (youtubeUrl) {
       const downloaded = await downloadYouTubeVideo(youtubeUrl, tmpDir);
       return { videoPath: downloaded, cleanupPaths: [downloaded] };
+    }
+    if (audioPath && fs.existsSync(audioPath)) return { audioPath, cleanupPaths: [] };
+    if (audioUrl) {
+      const downloaded = await downloadFileFromUrl(audioUrl, tmpDir, "audio");
+      return { audioPath: downloaded, cleanupPaths: [downloaded] };
+    }
+    if (pptPath && fs.existsSync(pptPath)) return { pptPath, cleanupPaths: [] };
+
     }
     if (audioPath && fs.existsSync(audioPath)) return { audioPath, cleanupPaths: [] };
     if (audioUrl) {

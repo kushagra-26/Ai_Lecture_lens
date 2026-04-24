@@ -8,6 +8,7 @@ const registerUser = async (req, res) => {
     const { name, email, password, role } = req.body;
 
     if (!name || !email || !password) {
+      console.warn("[Register] Missing fields:", { name: !!name, email: !!email, password: !!password });
       return res
         .status(400)
         .json({ message: "Please provide all required fields." });
@@ -15,6 +16,7 @@ const registerUser = async (req, res) => {
 
     const existingUser = await User.findOne({ email });
     if (existingUser) {
+      console.warn("[Register] Email already exists:", email);
       return res.status(400).json({ message: "Email already registered." });
     }
 

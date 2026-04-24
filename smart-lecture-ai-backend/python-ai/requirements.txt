@@ -1,6 +1,13 @@
 fastapi
 uvicorn[standard]
 python-multipart
+
+moviepy
+pydub
+imageio-ffmpeg
+
+faster-whisper
+
 moviepy
 pydub
 faster-whisper
@@ -8,12 +15,23 @@ opencv-python-headless
 pillow
 imagehash
 pytesseract
-transformers
+
+sentence-transformers==2.6.1
+transformers>=4.36.0,<5
 torch
+
 nltk
 spacy
-# RAG / vector store
+<<<<<<< HEAD
+
 chromadb
-sentence-transformers
 pymupdf
 python-docx
+
+paddleocr
+=======
+# RAG / vector store
+chromadb
+pymupdf
+python-docx
+>>>>>>> main
