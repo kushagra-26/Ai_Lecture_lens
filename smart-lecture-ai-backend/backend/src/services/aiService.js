@@ -8,13 +8,9 @@ const FormData = require("form-data");
 const Groq = require("groq-sdk");
 const { geminiChat, geminiJSON } = require("./gemini");
 
-=======
-const Groq = require("groq-sdk");
-const { geminiChat, geminiJSON } = require("./gemini");
-
 // ── Python / FastAPI config ──
 const PYTHON_VENV_PATH = process.env.PYTHON_PATH || "python";
-const AI_MODELS_DIR = path.join(__dirname, "../ ai_models");
+const AI_MODELS_DIR = path.join(__dirname, "../ai_models");
 const PYTHON_AI_URL = process.env.PYTHON_AI_URL || "http://localhost:8000";
 // FastAPI service URLs (preferred)
 const TRANSCRIBE_URL = process.env.TRANSCRIBE_SERVICE_URL || null;
@@ -24,7 +20,6 @@ const SUMMARIZE_URL = process.env.SUMMARIZE_SERVICE_URL || null;
 const CLEAN_URL = process.env.CLEAN_SERVICE_URL
   || (SUMMARIZE_URL ? SUMMARIZE_URL.replace("/summarize", "/clean") : null);
 
-const groqClient = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
 // ── Groq client (for Whisper + LLM fallback) ──
 const groqClient = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
 
@@ -195,8 +190,6 @@ function prepareWhisperFile(filePath) {
   const compressedSize = fs.statSync(outPath).size;
   log(`Compressed audio for Whisper: ${Math.round(size / 1024 / 1024)}MB -> ${Math.round(compressedSize / 1024 / 1024)}MB`);
   return { filePath: outPath, cleanupPath: outPath };
-  throw new Error("yt-dlp not found. Install it: https://github.com/yt-dlp/yt-dlp#installation");
-  throw new Error("yt-dlp not found. Install: https://github.com/yt-dlp/yt-dlp#installation");
 }
 
 async function downloadYouTubeVideo(url, outDir) {
@@ -265,8 +258,6 @@ exports.transcribe = async (filePath) => {
       const data = await sendFileToService(TRANSCRIBE_URL, filePath);
       return normalizeTranscript(data);
     } catch (err) {
-      errLog("FastAPI transcribe failed:", err.message);
-    }
       errLog("FastAPI transcribe failed, falling back to local:", err.message, err.code || "");
     }
   }
@@ -280,8 +271,6 @@ exports.transcribe = async (filePath) => {
     errLog("Local transcribe failed:", err.message);
     return [];
   }
-
-  return [];
 };
 
 exports.extract = async (filePath) => {
@@ -409,13 +398,6 @@ exports.generateQuiz = async (text, numQuestions = 5, { lectureId, bookDocumentI
       }
       if (Array.isArray(res.data?.questions)) {
         localQuiz = res.data.questions.map((q) => typeof q === "string" ? q : q.question || JSON.stringify(q));
-      // Use new structured MCQ format from Flan-T5 when available
-      if (result.structured && Array.isArray(result.structured)) {
-        localQuizStructured = result.structured;
-        log("Quiz via FastAPI (structured):", localQuizStructured.length, "MCQs");
-      }
-      if (result.questions) {
-        localQuiz = result.questions.map(q => typeof q === 'string' ? q : q.question || JSON.stringify(q));
       }
     } catch (err) {
       errLog("FastAPI quiz failed:", err.message);
@@ -423,30 +405,7 @@ exports.generateQuiz = async (text, numQuestions = 5, { lectureId, bookDocumentI
   }
 
   try {
-    const systemPrompt = `You are an educational AI. Generate multiple-choice quizzes as JSON.
-Return ONLY: {"questions":[{"question":"...","options":["A","B","C","D"],"correctAnswer":0}]}
-correctAnswer is a 0-based index. Generate exactly ${numQuestions} questions.`;
-    const parsed = await geminiJSON(systemPrompt, `Generate ${numQuestions} MCQs from:\n${quizContent}`);
-
-    if (Array.isArray(parsed.questions)) {
-      aiQuizStructured = parsed.questions;
-      const letters = ["A", "B", "C", "D"];
-      aiQuiz = parsed.questions.map((q, i) => {
-        const opts = (q.options || []).map((o, j) => `${letters[j]}) ${o}`).join("\n");
-        return `Q${i + 1}. ${q.question}\n${opts}\nAnswer: ${letters[q.correctAnswer] || "A"}`;
-      });
-    }
-  } catch (err) {
-    errLog("LLM quiz failed:", err.message);
-    }
-  }
-
-  // ── Gemini/Groq structured quiz ──
-  try {
-    const systemPrompt = `You are an educational AI. Generate multiple-choice quizzes as JSON.
-Return ONLY: {"questions":[{"question":"...","options":["A","B","C","D"],"correctAnswer":0}]}
-correctAnswer is 0-based index. Generate exactly ${numQuestions} questions.
-Make questions test understanding. Each option should be plausible. Avoid "All of the above".`;
+    const systemPrompt = `You are an educational AI. Generate multiple-choice quizzes as JSON.\nReturn ONLY: {"questions":[{"question":"...","options":["A","B","C","D"],"correctAnswer":0}]}\ncorrectAnswer is 0-based index. Generate exactly ${numQuestions} questions.\nMake questions test understanding. Each option should be plausible. Avoid "All of the above".`;
 
     const parsed = await geminiJSON(systemPrompt, `Generate ${numQuestions} MCQs from:\n${quizContent}`);
 
@@ -463,15 +422,14 @@ Make questions test understanding. Each option should be plausible. Avoid "All o
     errLog("LLM quiz failed:", err.message);
   }
 
-  const finalStructured = aiQuizStructured.length > 0 ? aiQuizStructured : localQuizStructured;
-
   return {
     localQuiz,
     aiQuiz,
     mergedQuiz: [...localQuiz, "---", ...aiQuiz],
-    aiQuizStructured: finalStructured,
+    aiQuizStructured,
   };
 };
+
 
 exports.prepareInputs = async ({ videoPath, audioPath, pptPath, youtubeUrl, audioUrl, tmpDir }) => {
   log("Preparing inputs:", { videoPath, audioPath, pptPath, youtubeUrl, audioUrl });
@@ -482,14 +440,6 @@ exports.prepareInputs = async ({ videoPath, audioPath, pptPath, youtubeUrl, audi
     if (youtubeUrl) {
       const downloaded = await downloadYouTubeVideo(youtubeUrl, tmpDir);
       return { videoPath: downloaded, cleanupPaths: [downloaded] };
-    }
-    if (audioPath && fs.existsSync(audioPath)) return { audioPath, cleanupPaths: [] };
-    if (audioUrl) {
-      const downloaded = await downloadFileFromUrl(audioUrl, tmpDir, "audio");
-      return { audioPath: downloaded, cleanupPaths: [downloaded] };
-    }
-    if (pptPath && fs.existsSync(pptPath)) return { pptPath, cleanupPaths: [] };
-
     }
     if (audioPath && fs.existsSync(audioPath)) return { audioPath, cleanupPaths: [] };
     if (audioUrl) {
