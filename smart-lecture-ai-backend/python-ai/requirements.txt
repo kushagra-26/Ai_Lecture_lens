@@ -2,26 +2,31 @@ fastapi
 uvicorn[standard]
 python-multipart
 
+# Audio/video processing
 moviepy
 pydub
 imageio-ffmpeg
+ffmpeg-python
 
+# Transcription (CPU-only)
 faster-whisper
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
 
-moviepy
-pydub
-faster-whisper
+# Frame extraction / OCR
 opencv-python-headless
 pillow
 imagehash
 pytesseract
 
-sentence-transformers==2.6.1
-transformers>=4.36.0,<5
-torch
-
+# Summarization / NLP
 nltk
 spacy
+
+# Embeddings (CPU)
+sentence-transformers==2.6.1
+transformers>=4.36.0,<5
+
 # RAG / vector store
 chromadb
 pymupdf

@@ -6,8 +6,11 @@ import uuid
 import subprocess
 from pathlib import Path
 
-# Add ai_models directory to Python path so we can import from it
-AI_MODELS_DIR = os.path.join(os.path.dirname(__file__), "..", "backend", "src", "ai_models")
+# Add ai_models directory to Python path — local copy (Docker) or dev sibling path
+_here = os.path.dirname(os.path.abspath(__file__))
+_local_models = os.path.join(_here, "ai_models")
+_dev_models = os.path.join(_here, "..", "backend", "src", "ai_models")
+AI_MODELS_DIR = _local_models if os.path.isdir(_local_models) else _dev_models
 sys.path.insert(0, AI_MODELS_DIR)
 
 from fastapi import FastAPI, UploadFile, File, HTTPException

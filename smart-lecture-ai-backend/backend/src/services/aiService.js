@@ -244,7 +244,7 @@ exports.transcribe = async (filePath) => {
       });
       return normalizeTranscript(transcription);
     } catch (err) {
-      errLog("Groq Whisper failed:", err.message);
+      errLog("Groq Whisper failed:", err.message, err.status || err.code || "");
     } finally {
       if (whisperFile.cleanupPath) {
         fs.rmSync(whisperFile.cleanupPath, { force: true });
@@ -268,8 +268,13 @@ exports.transcribe = async (filePath) => {
     return JSON.parse(result.stdout.toString().trim() || "[]");
   } catch (err) {
     errLog("Local transcribe failed:", err.message);
-    return [];
   }
+
+  throw new Error(
+    !process.env.GROQ_API_KEY
+      ? "Transcription failed: GROQ_API_KEY is not set. Add it to your Railway environment variables."
+      : "All transcription methods failed. Check server logs for details."
+  );
 };
 
 exports.extract = async (filePath) => {

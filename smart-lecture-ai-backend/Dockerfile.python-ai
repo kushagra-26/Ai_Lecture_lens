@@ -2,7 +2,7 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# System deps: ffmpeg for audio, tesseract for OCR
+# System deps: ffmpeg for audio extraction, tesseract for slide OCR
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     tesseract-ocr \
@@ -13,11 +13,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY python-ai/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy FastAPI app source
-COPY . .
+# Copy FastAPI app
+COPY python-ai/ .
+
+# Copy AI model modules from backend into local ai_models/
+COPY backend/src/ai_models/ ./ai_models/
 
 EXPOSE 8000
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
