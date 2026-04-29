@@ -16,6 +16,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY python-ai/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Bake spacy model into image — avoids 12.8MB download on every cold start
+RUN python -m spacy download en_core_web_sm
+
 # Copy FastAPI app
 COPY python-ai/ .
 

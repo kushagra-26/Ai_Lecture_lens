@@ -1,19 +1,23 @@
 import re
 import sys
 import os
-import spacy
 from pathlib import Path
 
-# -------------------- LOAD SPACY MODEL --------------------
-try:
-    nlp = spacy.load("en_core_web_sm", disable=["ner", "parser", "tagger"])
-except OSError:
-    import os
-    os.system("python -m spacy download en_core_web_sm")
-    nlp = spacy.load("en_core_web_sm", disable=["ner", "parser", "tagger"])
+# Lazy-load spacy — avoids download/load cost at import time
+_nlp = None
 
-if "sentencizer" not in nlp.pipe_names:
-    nlp.add_pipe("sentencizer")
+def _get_nlp():
+    global _nlp
+    if _nlp is None:
+        import spacy
+        try:
+            _nlp = spacy.load("en_core_web_sm", disable=["ner", "parser", "tagger"])
+        except OSError:
+            os.system("python -m spacy download en_core_web_sm")
+            _nlp = spacy.load("en_core_web_sm", disable=["ner", "parser", "tagger"])
+        if "sentencizer" not in _nlp.pipe_names:
+            _nlp.add_pipe("sentencizer")
+    return _nlp
 
 
 # -------------------- BASE TEXT CLEANER --------------------
@@ -52,7 +56,7 @@ def clean_text(text: str) -> str:
     text = re.sub(r"\b([a-z])\s+([a-z])\b", r"\1\2", text)
 
     # Sentence segmentation and capitalization
-    doc = nlp(text)
+    doc = _get_nlp()(text)
     sentences = [s.text.strip().capitalize() for s in doc.sents if s.text.strip()]
     cleaned_text = " ".join(sentences)
 
