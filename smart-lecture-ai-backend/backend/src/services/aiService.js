@@ -459,6 +459,6 @@ exports.prepareInputs = async ({ videoPath, videoUrl, audioPath, audioUrl, pptPa
     return { cleanupPaths: [] };
   } catch (err) {
     errLog("prepareInputs failed:", err.message);
-    return { cleanupPaths: [] };
+    throw err;
   }
 };

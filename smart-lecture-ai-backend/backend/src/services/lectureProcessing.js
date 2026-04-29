@@ -86,7 +86,11 @@ async function processLectureJob({
 
     const inputFile = prepared.videoPath || prepared.audioPath || prepared.pptPath;
     if (!inputFile) {
-      throw new Error("No valid lecture media was provided for processing.");
+      throw new Error(
+        youtubeUrl
+          ? "YouTube download failed — yt-dlp may not be installed on this server. Check server logs."
+          : "No valid lecture media was provided for processing."
+      );
     }
 
     const [transcript, extractResult] = await Promise.all([
