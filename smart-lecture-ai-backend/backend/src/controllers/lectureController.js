@@ -171,9 +171,7 @@ exports.uploadLecture = async (req, res) => {
 };
 
 exports.getLectures = async (req, res) => {
-  const role = req.user?.role;
-  const query = role === "teacher" ? { teacher: req.user._id } : {};
-  const lectures = await Lecture.find(query).sort({ createdAt: -1 });
+  const lectures = await Lecture.find({ teacher: req.user._id }).sort({ createdAt: -1 });
   res.json({ lectures });
 };
 
