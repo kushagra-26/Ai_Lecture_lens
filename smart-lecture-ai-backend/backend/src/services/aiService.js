@@ -430,12 +430,16 @@ exports.generateQuiz = async (text, numQuestions = 5, { lectureId, bookDocumentI
 };
 
 
-exports.prepareInputs = async ({ videoPath, audioPath, pptPath, youtubeUrl, audioUrl, tmpDir }) => {
-  log("Preparing inputs:", { videoPath, audioPath, pptPath, youtubeUrl, audioUrl });
+exports.prepareInputs = async ({ videoPath, videoUrl, audioPath, audioUrl, pptPath, pptUrl, youtubeUrl, tmpDir }) => {
+  log("Preparing inputs:", { videoPath, videoUrl, audioPath, audioUrl, pptPath, pptUrl, youtubeUrl });
   try {
     if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
 
     if (videoPath && fs.existsSync(videoPath)) return { videoPath, cleanupPaths: [] };
+    if (videoUrl) {
+      const downloaded = await downloadFileFromUrl(videoUrl, tmpDir, "video");
+      return { videoPath: downloaded, cleanupPaths: [downloaded] };
+    }
     if (youtubeUrl) {
       const downloaded = await downloadYouTubeVideo(youtubeUrl, tmpDir);
       return { videoPath: downloaded, cleanupPaths: [downloaded] };
@@ -446,6 +450,10 @@ exports.prepareInputs = async ({ videoPath, audioPath, pptPath, youtubeUrl, audi
       return { audioPath: downloaded, cleanupPaths: [downloaded] };
     }
     if (pptPath && fs.existsSync(pptPath)) return { pptPath, cleanupPaths: [] };
+    if (pptUrl) {
+      const downloaded = await downloadFileFromUrl(pptUrl, tmpDir, "ppt");
+      return { pptPath: downloaded, cleanupPaths: [downloaded] };
+    }
 
     log("No valid input found");
     return { cleanupPaths: [] };

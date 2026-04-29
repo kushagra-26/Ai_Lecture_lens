@@ -43,10 +43,12 @@ function buildLectureJobPayload(lecture) {
   return {
     lectureId: lecture._id.toString(),
     videoPath: absPathFromUrl(lecture.videoUrl),
+    videoUrl: isRemoteUrl(lecture.videoUrl) ? lecture.videoUrl : "",
     audioPath: absPathFromUrl(lecture.audioUrl),
-    pptPath: absPathFromUrl(lecture.pptUrl),
-    youtubeUrl: lecture.youtubeUrl || "",
     audioUrl: isRemoteUrl(lecture.audioUrl) ? lecture.audioUrl : "",
+    pptPath: absPathFromUrl(lecture.pptUrl),
+    pptUrl: isRemoteUrl(lecture.pptUrl) ? lecture.pptUrl : "",
+    youtubeUrl: lecture.youtubeUrl || "",
   };
 }
 
@@ -100,15 +102,16 @@ exports.uploadLecture = async (req, res) => {
     fs.mkdirSync(uploadsDir, { recursive: true });
   }
 
-  const videoUrl = req.files?.video?.[0]
-    ? toWebUrl(`uploads/${req.files.video[0].filename}`)
-    : null;
-  const uploadedAudioUrl = req.files?.audio?.[0]
-    ? toWebUrl(`uploads/${req.files.audio[0].filename}`)
-    : null;
-  const pptUrl = req.files?.ppt?.[0]
-    ? toWebUrl(`uploads/${req.files.ppt[0].filename}`)
-    : null;
+  // Cloudinary uploads return a URL in file.path; local disk uses filename
+  const resolveFileUrl = (file) => {
+    if (!file) return null;
+    if (file.path && isRemoteUrl(file.path)) return file.path; // Cloudinary URL
+    return toWebUrl(`uploads/${file.filename}`); // local path
+  };
+
+  const videoUrl = resolveFileUrl(req.files?.video?.[0]);
+  const uploadedAudioUrl = resolveFileUrl(req.files?.audio?.[0]);
+  const pptUrl = resolveFileUrl(req.files?.ppt?.[0]);
   const normalizedYoutubeUrl = youtubeUrl.trim();
   const normalizedAudioUrl = uploadedAudioUrl || audioUrl.trim() || null;
 
