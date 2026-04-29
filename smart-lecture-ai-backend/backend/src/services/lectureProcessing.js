@@ -50,10 +50,12 @@ async function markLectureFailed(lectureId, message) {
 async function processLectureJob({
   lectureId,
   videoPath,
+  videoUrl,
   audioPath,
-  pptPath,
-  youtubeUrl,
   audioUrl,
+  pptPath,
+  pptUrl,
+  youtubeUrl,
 }) {
   let lecture = null;
   let cleanupPaths = [];
@@ -71,10 +73,12 @@ async function processLectureJob({
     const tmpDir = path.join(__dirname, "../../tmp", lectureId.toString());
     const prepared = await aiService.prepareInputs({
       videoPath,
+      videoUrl,
       audioPath,
-      pptPath,
-      youtubeUrl,
       audioUrl,
+      pptPath,
+      pptUrl,
+      youtubeUrl,
       tmpDir,
     });
 
