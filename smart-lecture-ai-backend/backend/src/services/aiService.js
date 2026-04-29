@@ -103,8 +103,11 @@ exports.prepareText = async (rawText) => {
     }
   }
 
-  const prepared = extractKeyContent(cleaned, 6000);
-  log("prepareText output length:", prepared.length);
+  // Scale max chars with content length — longer videos get proportionally richer summaries.
+  // Gemini 1.5 supports ~2M tokens; cap at 40k chars (~10k tokens) to stay well within limits.
+  const maxChars = Math.min(Math.max(cleaned.length, 6000), 40000);
+  const prepared = extractKeyContent(cleaned, maxChars);
+  log("prepareText output length:", prepared.length, "/ input:", cleaned.length);
   return prepared;
 };
 
@@ -378,7 +381,8 @@ exports.dualSummarize = async (cleanText, { lectureId, bookDocumentIds = [] } = 
     const systemPrompt = semanticContext
       ? "You are an expert educational AI. Generate a clear lecture summary with sections: Overview, Key Concepts, Important Details, Takeaways."
       : "You are a helpful summarization assistant for lecture notes. Provide a clear, structured summary with key points and takeaways.";
-    aiSummary = await geminiChat(systemPrompt, content, { maxTokens: 4096, temperature: 0.3 });
+    const summaryTokens = Math.min(Math.max(Math.ceil(content.length / 8), 1024), 8192);
+    aiSummary = await geminiChat(systemPrompt, content, { maxTokens: summaryTokens, temperature: 0.3 });
   } catch (err) {
     errLog("LLM summarize failed:", err.message);
   }
