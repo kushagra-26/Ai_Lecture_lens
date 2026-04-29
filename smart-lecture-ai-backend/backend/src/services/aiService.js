@@ -199,12 +199,14 @@ async function downloadYouTubeVideo(url, outDir) {
   const outTemplate = path.join(outDir, `youtube_${Date.now()}.%(ext)s`);
   const args = [
     url,
-    "--format", "18/best",
+    "--format", "18/best[height<=720]/best",
     "--output", outTemplate,
     "--no-playlist",
     "--quiet",
     "--socket-timeout", "30",
     "--retries", "3",
+    "--extractor-args", "youtube:player_client=ios,web",
+    "--no-check-certificates",
   ];
 
   const result = spawnSync(ytDlp, args, { encoding: "utf8", timeout: 300000 });
