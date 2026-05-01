@@ -401,7 +401,7 @@ export default function LecturesPage() {
                   )}
                 </div>
 
-                <div className="px-5 pb-4 flex gap-2 border-t border-border pt-3">
+                <div className="px-5 pb-4 flex items-center gap-2 border-t border-border pt-3">
                   <Button
                     size="sm"
                     className="flex-1 h-8 text-[12px] bg-foreground text-background hover:bg-foreground/90 rounded-lg"
@@ -413,42 +413,25 @@ export default function LecturesPage() {
                     <PlayCircle className="mr-1 h-3.5 w-3.5" />
                     {lecture.youtubeUrl ? "Watch" : "View"}
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 text-[12px] border-border rounded-lg"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      router.push(`/dashboard/summaries?lecture=${lectureId}`)
-                    }}
-                  >
-                    <FileText className="mr-1 h-3.5 w-3.5" />
-                    Summary
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 text-[12px] border-border rounded-lg"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      router.push(`/dashboard/quizzes?lecture=${lectureId}`)
-                    }}
-                  >
-                    <Brain className="mr-1 h-3.5 w-3.5" />
-                    Quiz
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 text-[12px] border-border rounded-lg"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      router.push(`/dashboard/lectures/${lectureId}?tab=flashcards`)
-                    }}
-                  >
-                    <BookMarked className="mr-1 h-3.5 w-3.5" />
-                    Cards
-                  </Button>
+                  {[
+                    { icon: FileText, label: "Summary", href: `/dashboard/summaries?lecture=${lectureId}` },
+                    { icon: Brain, label: "Quiz", href: `/dashboard/quizzes?lecture=${lectureId}` },
+                    { icon: BookMarked, label: "Cards", href: `/dashboard/lectures/${lectureId}?tab=flashcards` },
+                  ].map(({ icon: Icon, label, href }) => (
+                    <Button
+                      key={label}
+                      size="icon"
+                      variant="outline"
+                      className="h-8 w-8 shrink-0 border-border rounded-lg"
+                      title={label}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        router.push(href)
+                      }}
+                    >
+                      <Icon className="h-3.5 w-3.5" />
+                    </Button>
+                  ))}
                 </div>
 
                 {lecture.youtubeUrl && (
