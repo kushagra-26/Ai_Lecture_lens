@@ -1,10 +1,10 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { apiService } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
-import type { Document as DocType, Lecture } from "@/lib/types"
+import type { Document as DocType, Lecture, ChatMessage } from "@/lib/types"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -18,6 +18,7 @@ import {
   ArrowLeft,
   AudioLines,
   BookMarked,
+  Bot,
   Brain,
   CheckCircle2,
   Clock,
@@ -29,8 +30,10 @@ import {
   Plus,
   Presentation,
   RefreshCw,
+  Send,
   Trash2,
   Upload,
+  User,
 } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 import { cn } from "@/lib/utils"
@@ -51,6 +54,13 @@ export default function LectureViewerPage() {
   const [bookError, setBookError] = useState("")
   const bookInputRef = useRef<HTMLInputElement>(null)
   const bookPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Chat
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  const [chatInput, setChatInput] = useState("")
+  const [chatSending, setChatSending] = useState(false)
+  const chatBottomRef = useRef<HTMLDivElement>(null)
+  const chatInputRef = useRef<HTMLTextAreaElement>(null)
 
   const fetchLecture = async () => {
     try {
@@ -110,6 +120,23 @@ export default function LectureViewerPage() {
       setBooks((prev) => prev.filter((b) => b._id !== bookId))
     } catch { /* ignore */ }
   }
+
+  const sendChatMessage = useCallback(async () => {
+    const msg = chatInput.trim()
+    if (!msg || chatSending) return
+    setChatInput("")
+    setChatMessages((prev) => [...prev, { role: "user", content: msg }])
+    setChatSending(true)
+    try {
+      const { answer, sources } = await apiService.chatWithLecture(id, msg)
+      setChatMessages((prev) => [...prev, { role: "assistant", content: answer }])
+    } catch {
+      setChatMessages((prev) => [...prev, { role: "assistant", content: "Something went wrong. Please try again." }])
+    } finally {
+      setChatSending(false)
+      setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50)
+    }
+  }, [chatInput, chatSending, id])
 
   useEffect(() => {
     if (!lecture || (lecture.status !== "processing" && lecture.status !== "queued")) return
@@ -310,7 +337,7 @@ export default function LectureViewerPage() {
       <Card>
         <Tabs defaultValue="summary" className="w-full">
           <CardHeader className="pb-0">
-            <TabsList className={`grid w-full ${lecture.pptUrl ? "grid-cols-4" : "grid-cols-3"}`}>
+            <TabsList className={`grid w-full ${lecture.pptUrl ? "grid-cols-5" : "grid-cols-4"}`}>
               <TabsTrigger value="summary">
                 <FileText className="mr-1.5 h-3.5 w-3.5" /> Summary
               </TabsTrigger>
@@ -324,6 +351,9 @@ export default function LectureViewerPage() {
                     {books.length}
                   </span>
                 )}
+              </TabsTrigger>
+              <TabsTrigger value="chat" disabled={lecture.status !== "completed"}>
+                <MessageSquare className="mr-1.5 h-3.5 w-3.5" /> Ask AI
               </TabsTrigger>
               {lecture.pptUrl && (
                 <TabsTrigger value="slides">
@@ -455,6 +485,91 @@ export default function LectureViewerPage() {
                   })}
                 </div>
               )}
+            </TabsContent>
+
+            {/* ── Chat tab ── */}
+            <TabsContent value="chat" className="flex flex-col" style={{ height: 480 }}>
+              {/* Messages */}
+              <div className="flex-1 overflow-y-auto space-y-4 pr-1 mb-4">
+                {chatMessages.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
+                    <div className="h-12 w-12 rounded-full bg-[#EAB308]/10 flex items-center justify-center">
+                      <Bot className="h-6 w-6 text-[#EAB308]" />
+                    </div>
+                    <p className="text-sm font-medium">Ask anything about this lecture</p>
+                    <p className="text-xs text-muted-foreground max-w-xs">
+                      I'll only answer based on what was said in the video — no outside knowledge.
+                    </p>
+                    <div className="flex flex-wrap gap-2 justify-center mt-2">
+                      {["What are the key concepts?", "Summarize the main points", "What examples were given?"].map((q) => (
+                        <button
+                          key={q}
+                          onClick={() => { setChatInput(q) }}
+                          className="text-xs px-3 py-1.5 rounded-full border border-border hover:border-[#EAB308]/50 hover:bg-[#EAB308]/5 transition-all text-muted-foreground"
+                        >
+                          {q}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  chatMessages.map((msg, i) => (
+                    <div key={i} className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                      {msg.role === "assistant" && (
+                        <div className="h-7 w-7 rounded-full bg-[#EAB308]/10 flex items-center justify-center shrink-0 mt-0.5">
+                          <Bot className="h-3.5 w-3.5 text-[#EAB308]" />
+                        </div>
+                      )}
+                      <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                        msg.role === "user"
+                          ? "bg-[#EAB308] text-black font-medium rounded-br-sm"
+                          : "bg-muted/60 text-foreground rounded-bl-sm"
+                      }`}>
+                        {msg.content}
+                      </div>
+                      {msg.role === "user" && (
+                        <div className="h-7 w-7 rounded-full bg-muted flex items-center justify-center shrink-0 mt-0.5">
+                          <User className="h-3.5 w-3.5 text-muted-foreground" />
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+                {chatSending && (
+                  <div className="flex gap-3 justify-start">
+                    <div className="h-7 w-7 rounded-full bg-[#EAB308]/10 flex items-center justify-center shrink-0">
+                      <Bot className="h-3.5 w-3.5 text-[#EAB308]" />
+                    </div>
+                    <div className="bg-muted/60 rounded-2xl rounded-bl-sm px-4 py-3 flex gap-1 items-center">
+                      {[0, 1, 2].map((i) => (
+                        <span key={i} className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50 animate-bounce" style={{ animationDelay: `${i * 150}ms` }} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div ref={chatBottomRef} />
+              </div>
+
+              {/* Input */}
+              <div className="flex gap-2 items-end border border-border rounded-xl p-2 bg-muted/20 focus-within:border-[#EAB308]/50 transition-colors">
+                <textarea
+                  ref={chatInputRef}
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChatMessage() } }}
+                  placeholder="Ask about this lecture..."
+                  rows={1}
+                  className="flex-1 resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground/50 max-h-32"
+                />
+                <Button
+                  size="icon"
+                  onClick={sendChatMessage}
+                  disabled={!chatInput.trim() || chatSending}
+                  className="h-8 w-8 shrink-0 bg-[#EAB308] hover:bg-[#EAB308]/90 text-black rounded-lg"
+                >
+                  <Send className="h-3.5 w-3.5" />
+                </Button>
+              </div>
             </TabsContent>
 
             {lecture.pptUrl && (

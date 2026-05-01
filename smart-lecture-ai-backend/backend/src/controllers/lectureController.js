@@ -1,10 +1,14 @@
 const fs = require("fs");
 const path = require("path");
+const axios = require("axios");
 const { Queue } = require("bullmq");
 const Lecture = require("../models/Lecture");
 const { connection, isRedisAvailable } = require("../queues");
 const { processLectureJob } = require("../services/lectureProcessing");
 const { createAndIngestDocument } = require("./documentController");
+const { geminiChat } = require("../services/gemini");
+
+const PYTHON_AI_URL = process.env.PYTHON_AI_URL || "http://localhost:8000";
 
 let aiQueue = null;
 
@@ -225,6 +229,56 @@ exports.processLecture = async (req, res) => {
 
   const result = await queueOrProcessLecture(lecture);
   res.json(result);
+};
+
+exports.chatWithLecture = async (req, res) => {
+  const { message } = req.body;
+  if (!message?.trim()) return res.status(400).json({ message: "`message` is required" });
+
+  const lecture = await Lecture.findById(req.params.id);
+  if (!lecture) return res.status(404).json({ message: "Lecture not found" });
+  if (lecture.status !== "completed") {
+    return res.status(400).json({ message: "Lecture is still being processed. Try again shortly." });
+  }
+
+  // Query ChromaDB for relevant transcript chunks
+  let contextChunks = [];
+  try {
+    const resp = await axios.post(
+      `${PYTHON_AI_URL}/query-document`,
+      { document_id: `lecture_${lecture._id}`, query: message, top_k: 5 },
+      { timeout: 15000 }
+    );
+    contextChunks = resp.data.chunks || [];
+  } catch (err) {
+    console.error("[lectureController] Vector query failed:", err.message);
+    return res.status(500).json({ message: "Failed to search lecture transcript. Please try again." });
+  }
+
+  if (contextChunks.length === 0) {
+    return res.json({
+      answer: "I couldn't find relevant content in this lecture to answer your question.",
+      sources: [],
+    });
+  }
+
+  const contextText = contextChunks.map((c, i) => `[Excerpt ${i + 1}]\n${c.text}`).join("\n\n");
+
+  const systemPrompt = `You are a helpful study assistant. The user is asking questions about a lecture titled "${lecture.title}".
+Answer ONLY based on the provided excerpts from the lecture transcript. If the answer is not found in the excerpts, say "This topic wasn't covered in the lecture."
+Do not use any outside knowledge. Keep answers concise, accurate, and educational.`;
+
+  const userMessage = `Lecture transcript excerpts:\n\n${contextText}\n\n---\nQuestion: ${message}`;
+
+  let answer = "";
+  try {
+    answer = await geminiChat(systemPrompt, userMessage, { maxTokens: 600, temperature: 0.3 });
+  } catch (err) {
+    console.error("[lectureController] Gemini chat failed:", err.message);
+    answer = `Here are the most relevant sections I found:\n\n${contextChunks.map((c) => c.text).join("\n\n")}`;
+  }
+
+  res.json({ answer, sources: contextChunks.map((c) => ({ text: c.text, score: c.score ?? 0 })) });
 };
 
 exports.deleteLecture = async (req, res) => {

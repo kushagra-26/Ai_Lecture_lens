@@ -194,6 +194,15 @@ export const apiService = {
     await axios.delete(`${API_URL}/documents/${id}/chat`, { headers: authHeaders() })
   },
 
+  async chatWithLecture(id: string, message: string): Promise<ChatResponse> {
+    const response = await axios.post(
+      `${API_URL}/lectures/${id}/chat`,
+      { message },
+      { headers: authHeaders() }
+    )
+    return response.data
+  },
+
   async uploadBookToLecture(lectureId: string, files: File[]): Promise<{ books: DocType[] }> {
     const form = new FormData()
     files.forEach((f) => form.append("book", f))
