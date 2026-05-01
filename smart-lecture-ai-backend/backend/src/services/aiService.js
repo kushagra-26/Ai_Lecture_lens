@@ -197,13 +197,35 @@ function prepareWhisperFile(filePath) {
 
 async function fetchYouTubeTranscript(url) {
   log("Fetching YouTube transcript via caption API:", url);
-  const transcript = await YoutubeTranscript.fetchTranscript(url);
-  if (!transcript?.length) throw new Error("No captions found for this video.");
-  return transcript.map(seg => ({
-    start: seg.offset / 1000,
-    end: (seg.offset + seg.duration) / 1000,
-    text: seg.text,
-  }));
+
+  // Try tracks in order: manual EN → auto-generated EN → library default (any language)
+  const attempts = [
+    { lang: "en" },
+    { lang: "a.en" },
+    {},
+  ];
+
+  let lastErr;
+  for (const opts of attempts) {
+    try {
+      const transcript = await YoutubeTranscript.fetchTranscript(url, opts);
+      if (transcript?.length) {
+        log(`Captions found (lang: ${opts.lang || "default"}), segments: ${transcript.length}`);
+        return transcript.map(seg => ({
+          start: seg.offset / 1000,
+          end: (seg.offset + seg.duration) / 1000,
+          text: seg.text,
+        }));
+      }
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+
+  throw new Error(
+    lastErr?.message ||
+    "No captions available for this video. Please download the video and upload it as a file instead."
+  );
 }
 
 exports.fetchYouTubeTranscript = fetchYouTubeTranscript;
