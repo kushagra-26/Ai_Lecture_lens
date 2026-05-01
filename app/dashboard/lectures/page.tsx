@@ -437,6 +437,18 @@ export default function LecturesPage() {
                     <Brain className="mr-1 h-3.5 w-3.5" />
                     Quiz
                   </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-[12px] border-border rounded-lg"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      router.push(`/dashboard/lectures/${lectureId}?tab=flashcards`)
+                    }}
+                  >
+                    <BookMarked className="mr-1 h-3.5 w-3.5" />
+                    Cards
+                  </Button>
                 </div>
 
                 {lecture.youtubeUrl && (

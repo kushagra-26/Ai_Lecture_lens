@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState, useCallback } from "react"
-import { useParams, useRouter } from "next/navigation"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { apiService } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
 import type { Document as DocType, Lecture, ChatMessage, Flashcard } from "@/lib/types"
@@ -44,6 +44,8 @@ import { cn } from "@/lib/utils"
 export default function LectureViewerPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const defaultTab = searchParams.get("tab") || "summary"
   const { user } = useAppStore()
 
   const [lecture, setLecture] = useState<Lecture | null>(null)
@@ -377,7 +379,7 @@ export default function LectureViewerPage() {
       </div>
 
       <Card>
-        <Tabs defaultValue="summary" className="w-full">
+        <Tabs defaultValue={defaultTab} className="w-full">
           <CardHeader className="pb-0">
             <TabsList className={`grid w-full ${lecture.pptUrl ? "grid-cols-6" : "grid-cols-5"}`}>
               <TabsTrigger value="summary">
