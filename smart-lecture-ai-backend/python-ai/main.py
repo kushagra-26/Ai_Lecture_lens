@@ -13,7 +13,7 @@ _dev_models = os.path.join(_here, "..", "backend", "src", "ai_models")
 AI_MODELS_DIR = _local_models if os.path.isdir(_local_models) else _dev_models
 sys.path.insert(0, AI_MODELS_DIR)
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
@@ -48,11 +48,11 @@ except Exception as _e:
     print(f"[main] WARNING: summarize import failed: {_e}", file=sys.stderr)
 
 try:
-    from vector_store import ingest, query as vs_query, collection_exists
-    from document_processor import chunk_text as _chunk_text  # no DocumentProcessor class exists
+    from vector_store import ingest, query as vs_query, collection_exists, delete as vs_delete
+    from document_processor import chunk_text as _chunk_text, process_document as _process_document
     VECTOR_STORE_AVAILABLE = True
 except Exception as _e:
-    ingest = vs_query = collection_exists = _chunk_text = None
+    ingest = vs_query = collection_exists = vs_delete = _chunk_text = _process_document = None
     VECTOR_STORE_AVAILABLE = False
     print(f"[main] WARNING: vector_store import failed: {_e}", file=sys.stderr)
 
@@ -250,6 +250,53 @@ async def query_document(payload: dict):
         return {"chunks": []}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Query failed: {e}")
+
+
+@app.post("/ingest-document")
+async def ingest_document(
+    file: UploadFile = File(...),
+    document_id: str = Form(...),
+    title: str = Form(None),
+):
+    """Accept a PDF/DOCX/TXT file, extract text, chunk it, and store in ChromaDB."""
+    if not VECTOR_STORE_AVAILABLE:
+        raise HTTPException(status_code=500, detail="Vector store unavailable")
+    if not document_id:
+        raise HTTPException(status_code=400, detail="`document_id` is required")
+
+    req_id = uuid.uuid4().hex
+    suffix = os.path.splitext(file.filename)[1] or ".bin"
+    target = UPLOAD_DIR / f"{req_id}{suffix}"
+
+    with open(target, "wb") as buf:
+        shutil.copyfileobj(file.file, buf)
+
+    try:
+        def _run():
+            result = _process_document(str(target))
+            chunks = result["chunks"]
+            count = ingest(document_id, chunks, {"title": title or document_id})
+            return count, result["total_words"]
+
+        chunk_count, total_words = await asyncio.to_thread(_run)
+        return {"ok": True, "chunk_count": chunk_count, "total_words": total_words}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Document ingest failed: {e}")
+    finally:
+        target.unlink(missing_ok=True)
+
+
+@app.delete("/delete-document/{document_id}")
+async def delete_document(document_id: str):
+    """Remove a document's vectors from ChromaDB."""
+    if not VECTOR_STORE_AVAILABLE:
+        raise HTTPException(status_code=500, detail="Vector store unavailable")
+
+    try:
+        deleted = await asyncio.to_thread(vs_delete, document_id)
+        return {"ok": deleted}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Delete failed: {e}")
 
 
 if __name__ == "__main__":
