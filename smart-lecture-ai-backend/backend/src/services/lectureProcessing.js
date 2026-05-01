@@ -73,19 +73,21 @@ async function processLectureJob({
     let transcript = null;
     let frames = [];
 
-    // For YouTube URLs, try caption/transcript API first (avoids video download + IP blocks)
+    // YouTube: caption API only — yt-dlp is blocked on Railway cloud IPs
     if (youtubeUrl) {
       try {
-        console.log("[lectureProcessing] Trying YouTube caption API for:", youtubeUrl);
+        console.log("[lectureProcessing] Fetching YouTube captions for:", youtubeUrl);
         transcript = await aiService.fetchYouTubeTranscript(youtubeUrl);
-        console.log("[lectureProcessing] Caption API succeeded, segments:", transcript.length);
+        console.log("[lectureProcessing] Captions fetched, segments:", transcript.length);
       } catch (captionErr) {
-        console.warn("[lectureProcessing] Caption API failed, falling back to yt-dlp:", captionErr.message);
-        transcript = null;
+        throw new Error(
+          "This YouTube video does not have auto-generated captions available. " +
+          "Please download the video file and upload it directly instead."
+        );
       }
     }
 
-    // Fall back to file download + transcription if captions unavailable
+    // Uploaded files / direct URLs: download → transcribe + extract frames
     if (!transcript) {
       const tmpDir = path.join(__dirname, "../../tmp", lectureId.toString());
       const prepared = await aiService.prepareInputs({
@@ -95,7 +97,6 @@ async function processLectureJob({
         audioUrl,
         pptPath,
         pptUrl,
-        youtubeUrl,
         tmpDir,
       });
 
@@ -103,11 +104,7 @@ async function processLectureJob({
 
       const inputFile = prepared.videoPath || prepared.audioPath || prepared.pptPath;
       if (!inputFile) {
-        throw new Error(
-          youtubeUrl
-            ? "YouTube download failed — yt-dlp could not download the video and no captions were found. Check server logs."
-            : "No valid lecture media was provided for processing."
-        );
+        throw new Error("No valid lecture media was provided for processing.");
       }
 
       const [fetchedTranscript, extractResult] = await Promise.all([
