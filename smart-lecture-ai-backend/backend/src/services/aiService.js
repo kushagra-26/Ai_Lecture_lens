@@ -7,6 +7,7 @@ const { spawnSync, execFileSync } = require("child_process");
 const FormData = require("form-data");
 const Groq = require("groq-sdk");
 const { YoutubeTranscript } = require("youtube-transcript");
+const ytdl = require("@distube/ytdl-core");
 const { geminiChat, geminiJSON } = require("./gemini");
 
 // ── Python / FastAPI config ──
@@ -196,22 +197,51 @@ function prepareWhisperFile(filePath) {
 }
 
 async function fetchYouTubeTranscript(url) {
-  log("Fetching YouTube transcript via caption API:", url);
+  log("Fetching YouTube transcript:", url);
 
-  // Try tracks in order: manual EN → auto-generated EN → library default (any language)
-  const attempts = [
-    { lang: "en" },
-    { lang: "a.en" },
-    {},
-  ];
+  // Method 1: @distube/ytdl-core — gets caption track URLs directly from player response,
+  // handles bot detection better than youtube-transcript
+  try {
+    const info = await ytdl.getInfo(url);
+    const tracks =
+      info.player_response?.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
 
+    if (tracks.length) {
+      // Prefer English; fall back to first available track
+      const track =
+        tracks.find((t) => t.languageCode === "en") ||
+        tracks.find((t) => t.languageCode?.startsWith("en")) ||
+        tracks[0];
+
+      const res = await axios.get(track.baseUrl + "&fmt=json3");
+      const events = res.data?.events || [];
+      const segments = events
+        .filter((e) => e.segs)
+        .map((e) => ({
+          start: (e.tStartMs || 0) / 1000,
+          end: ((e.tStartMs || 0) + (e.dDurationMs || 0)) / 1000,
+          text: e.segs.map((s) => s.utf8 || "").join("").trim(),
+        }))
+        .filter((s) => s.text);
+
+      if (segments.length) {
+        log(`Captions via ytdl (lang: ${track.languageCode}), segments: ${segments.length}`);
+        return segments;
+      }
+    }
+  } catch (ytdlErr) {
+    log("ytdl caption method failed, trying youtube-transcript:", ytdlErr.message);
+  }
+
+  // Method 2: youtube-transcript — tries manual EN, auto EN, then default
+  const attempts = [{ lang: "en" }, { lang: "a.en" }, {}];
   let lastErr;
   for (const opts of attempts) {
     try {
       const transcript = await YoutubeTranscript.fetchTranscript(url, opts);
       if (transcript?.length) {
-        log(`Captions found (lang: ${opts.lang || "default"}), segments: ${transcript.length}`);
-        return transcript.map(seg => ({
+        log(`Captions via youtube-transcript (lang: ${opts.lang || "default"}), segments: ${transcript.length}`);
+        return transcript.map((seg) => ({
           start: seg.offset / 1000,
           end: (seg.offset + seg.duration) / 1000,
           text: seg.text,
@@ -223,8 +253,8 @@ async function fetchYouTubeTranscript(url) {
   }
 
   throw new Error(
-    lastErr?.message ||
-    "No captions available for this video. Please download the video and upload it as a file instead."
+    "This YouTube video does not have auto-generated captions available. " +
+    "Please download the video and upload it as a file instead."
   );
 }
 
