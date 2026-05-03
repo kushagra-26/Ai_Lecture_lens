@@ -202,9 +202,15 @@ async function fetchYouTubeTranscript(url) {
   // Method 1: @distube/ytdl-core — gets caption track URLs directly from player response,
   // handles bot detection better than youtube-transcript
   try {
-    const info = await ytdl.getInfo(url);
+    log("ytdl: calling getInfo...");
+    const info = await Promise.race([
+      ytdl.getInfo(url),
+      new Promise((_, rej) => setTimeout(() => rej(new Error("ytdl.getInfo timeout 20s")), 20000)),
+    ]);
+    log("ytdl: getInfo returned");
     const tracks =
       info.player_response?.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
+    log(`ytdl: found ${tracks.length} caption tracks`);
 
     if (tracks.length) {
       // Prefer English; fall back to first available track
@@ -213,7 +219,8 @@ async function fetchYouTubeTranscript(url) {
         tracks.find((t) => t.languageCode?.startsWith("en")) ||
         tracks[0];
 
-      const res = await axios.get(track.baseUrl + "&fmt=json3");
+      log(`ytdl: fetching json3 for lang=${track.languageCode}`);
+      const res = await axios.get(track.baseUrl + "&fmt=json3", { timeout: 15000 });
       const events = res.data?.events || [];
       const segments = events
         .filter((e) => e.segs)
@@ -228,12 +235,14 @@ async function fetchYouTubeTranscript(url) {
         log(`Captions via ytdl (lang: ${track.languageCode}), segments: ${segments.length}`);
         return segments;
       }
+      log("ytdl: track returned no usable segments");
     }
   } catch (ytdlErr) {
-    log("ytdl caption method failed, trying youtube-transcript:", ytdlErr.message);
+    log("ytdl caption method failed:", ytdlErr.message);
   }
 
   // Method 2: youtube-transcript — tries manual EN, auto EN, then default
+  log("Trying youtube-transcript fallback...");
   const attempts = [{ lang: "en" }, { lang: "a.en" }, {}];
   let lastErr;
   for (const opts of attempts) {
@@ -247,14 +256,17 @@ async function fetchYouTubeTranscript(url) {
           text: seg.text,
         }));
       }
+      log(`youtube-transcript (lang: ${opts.lang || "default"}): empty result`);
     } catch (err) {
       lastErr = err;
+      log(`youtube-transcript (lang: ${opts.lang || "default"}) failed:`, err.message);
     }
   }
 
   throw new Error(
     "This YouTube video does not have auto-generated captions available. " +
-    "Please download the video and upload it as a file instead."
+    "Please download the video and upload it as a file instead. " +
+    `(last error: ${lastErr?.message || "unknown"})`
   );
 }
 
