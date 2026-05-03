@@ -1,4 +1,4 @@
-FROM node:18
+FROM node:20
 WORKDIR /app
 
 # Install ffmpeg + yt-dlp for YouTube downloads and audio extraction
